@@ -135,17 +135,28 @@ def svg_fonts_to_absolute_paths(svg: str) -> str:
     return out
 
 
-def get_openai_client():
-    try:
-        from openai import OpenAI
-    except Exception:
-        return None
+def _get_openai_api_key():
+    """OPENAI_API_KEY를 st.secrets 또는 환경변수에서 읽음. 없으면 빈 문자열."""
     key = None
     try:
         key = st.secrets.get("OPENAI_API_KEY")
     except Exception:
         pass
-    key = key or os.getenv("OPENAI_API_KEY")
+    key = key or os.getenv("OPENAI_API_KEY") or ""
+    return (key or "").strip()
+
+
+def is_openai_api_key_configured() -> bool:
+    """API 키가 설정되어 있는지 확인 (값 노출 없음)."""
+    return bool(_get_openai_api_key())
+
+
+def get_openai_client():
+    try:
+        from openai import OpenAI
+    except Exception:
+        return None
+    key = _get_openai_api_key()
     if not key:
         return None
     return OpenAI(api_key=key)
@@ -1023,6 +1034,10 @@ key_points 작성 기준: 기사에서 독자가 알아야 할 핵심 인사이�
 def run_desk_mode():
     st.title("SEGYE.ON — AI 편집 데스크")
     st.caption("세계일보 기사 기반 자동 분석/검증/인포그래픽 생성 콘솔")
+    if is_openai_api_key_configured():
+        st.caption("OpenAI API 키: ✅ 설정됨")
+    else:
+        st.warning("OpenAI API 키가 설정되지 않았습니다. Secrets 또는 환경변수 OPENAI_API_KEY를 설정해주세요.")
 
     left, right = st.columns([0.42, 0.58], gap="large")
 
@@ -1252,6 +1267,11 @@ def run_desk_mode():
 
 def run_public_mode():
     """기존 퍼블릭 화면: URL 입력 → 초안 → 수정 → 렌더 → 공유"""
+    if is_openai_api_key_configured():
+        st.caption("OpenAI API 키: ✅ 설정됨")
+    else:
+        st.warning("OpenAI API 키가 설정되지 않았습니다. Secrets 또는 환경변수 OPENAI_API_KEY를 설정해주세요.")
+
     left, right = st.columns([0.44, 0.56], gap="large")
 
     with left:
