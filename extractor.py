@@ -331,13 +331,15 @@ def choose_kpis(nums: list, k: int = 4, title: str = "") -> list:
             if sum(1 for p in picked if _kpi_bucket(p.get("unit","")) == bucket_name) >= limit:
                 return
 
-    take("ratio", 1)
+    # ratio는 가능하면 2개까지 먼저 확보(구성비 쌍 대비)
+    take("ratio", 2)
+
+    # count는 1개 확보
     take("count", 1)
+
+    # money/time는 있으면 1개씩
     take("money", 1)
     take("time", 1)
-
-    if len(picked) < k:
-        take("ratio", 2)
 
     if len(picked) < k:
         for n in candidates:
