@@ -20,10 +20,55 @@ def get_openai_client():
     return OpenAI(api_key=key)
 
 
-def refine_numbers_with_openai(numbers: list[dict], title_hint: str = "") -> list[dict]:
+def enrich_labels(title: str, summary: str, text: str, numbers: list[dict]) -> dict:
+    """숫자 목록에 대해 label 생성 후 JSON 반환. 실패 시 빈 dict."""
+    client = get_openai_client()
+    if not client:
+        return {}
+
+    prompt = f"""
+기사 제목:
+{title}
+
+기사 요약:
+{summary}
+
+본문 일부:
+{(text or "")[:2000]}
+
+숫자 목록:
+{json.dumps(numbers, ensure_ascii=False)}
+
+각 숫자에 대해 label(6단어 이하 KPI 라벨), value(숫자만), unit(단위), note(맥락 한 줄), drop(불명확 시 true)를 채워 JSON 반환.
+형식: {"items": [{"label":"", "value":"", "unit":"", "note":"", "drop": false 또는 true}, ...]} 순서는 숫자 목록과 동일하게.
+"""
+
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "뉴스 데이터 라벨 생성기"},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        raw = res.choices[0].message.content or "{}"
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+def refine_numbers_with_openai(
+    numbers: list[dict],
+    title_hint: str = "",
+    summary: str = "",
+    text: str = "",
+) -> list[dict]:
     """
     input: [{"label": "...", "value": "3.5%", "context": "..."}...]
     output: [{"label": "기준금리", "value": "3.50", "unit": "%", "note": "…"} ...]
+    text/summary 있으면 enrich_labels로 먼저 라벨 생성 후 사용.
     """
     client = get_openai_client()
     if client is None:
@@ -33,33 +78,57 @@ def refine_numbers_with_openai(numbers: list[dict], title_hint: str = "") -> lis
         return []
 
     nums_in = numbers[:8]
+    title = title_hint or ""
+    article_text = (text or "").strip()
+    article_summary = (summary or "").strip()
+
+    if article_text or article_summary:
+        enriched = enrich_labels(title, article_summary, article_text, nums_in)
+        items = enriched.get("items") or []
+        for i, n in enumerate(nums_in):
+            if i < len(items) and items[i].get("label"):
+                n["label"] = (items[i].get("label") or "").strip()
 
     system = (
-        "너는 신문사 인포그래픽 편집 데스크다. "
-        "숫자 후보를 보고 '무슨 수치인지' 라벨과 단위를 정확히 정리한다. "
+        "너는 경제·정책·사회 뉴스를 해석하는 데이터 에디터다. "
+        "주어진 숫자 리스트를 보고, 기사 맥락에 맞는 '짧고 명확한 KPI 라벨'을 생성하라. "
+        "규칙: 6단어 이하, 뉴스 그래픽 스타일, 구체적 의미 반영, 모호한 표현 금지, "
+        "단순 '수치'·'데이터' 금지, 가능한 경우 단위 의미 포함. "
         "기사에 근거 없는 해석/추측은 하지 않는다."
     )
 
-    user_payload = {
-        "title_hint": title_hint,
-        "items": nums_in,
-        "instruction": (
-            "각 item에 대해 아래 필드를 채워라.\n"
-            "- label: 독자용 짧은 라벨(2~8자)\n"
-            "- value: 숫자만(쉼표 제거, 소수 유지 가능)\n"
-            "- unit: 단위(%/원/명/건/배/년/월/일/조/억/만 등 없으면 빈 문자열)\n"
-            "- note: 맥락 한 줄(20~45자), 원문 문맥 기반\n"
-            "의미가 불명확하거나 순번/날짜/페이지 등으로 보이면 drop=true로 표시해 제외해라.\n"
-            "출력은 반드시 JSON 하나만. 형식: {\"items\": [{\"label\":\"\", \"value\":\"\", \"unit\":\"\", \"note\":\"\", \"drop\": false 또는 true}, ...]}"
-        ),
-    }
+    summary_for_prompt = article_summary or ""
+    text_excerpt = (
+        article_text[:2000]
+        if article_text
+        else "\n".join(
+            (i.get("context") or "").strip() for i in nums_in if (i.get("context") or "").strip()
+        )[:2000] or "(없음)"
+    )
+    numbers_json = json.dumps(nums_in, ensure_ascii=False, indent=0)
+
+    user_content = f"""기사 제목:
+{title}
+
+기사 요약:
+{summary_for_prompt}
+
+본문 일부:
+{text_excerpt}
+
+숫자 목록:
+{numbers_json}
+
+각 숫자에 대해 label 필드를 생성해 JSON으로 반환하라.
+각 item에 대해 label(6단어 이하 KPI 라벨), value(숫자만), unit(단위), note(맥락 한 줄), drop(불명확 시 true)를 채워라.
+출력 형식: {{"items": [{{"label":"", "value":"", "unit":"", "note":"", "drop": false 또는 true}}, ...]}} 순서는 숫자 목록과 동일하게."""
 
     try:
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+                {"role": "user", "content": user_content},
             ],
             temperature=0.2,
             response_format={"type": "json_object"},
@@ -233,6 +302,23 @@ def make_simple_callout(text: str, max_len: int = 160) -> str:
     return (t[:max_len] + "…") if len(t) > max_len else t
 
 
+def wrap_headline(text: str, width: int = 18) -> list[str]:
+    words = (text or "").strip().split()
+    lines = []
+    current = ""
+
+    for w in words:
+        if len(current + w) < width:
+            current += w + " "
+        else:
+            lines.append(current.strip())
+            current = w + " "
+
+    if current.strip():
+        lines.append(current.strip())
+    return lines[:2]
+
+
 # (선택) SVG -> PNG 변환
 # pip install cairosvg
 # import cairosvg
@@ -318,6 +404,8 @@ def build_render_model(spec: dict) -> dict:
     chart_note = charts[0].get("note", "").strip() if charts else ""
     nums = c.get("numbers", [])[:4]
     for n in nums:
+        if not n.get("label"):
+            n["label"] = "핵심 지표"
         n["trend"] = classify_trend(n.get("value", ""))
     numbers = nums[:2]
     big1 = str(numbers[0].get("value", "")) if numbers else ""
@@ -359,10 +447,14 @@ def build_render_model(spec: dict) -> dict:
     chart_type = "donut" if len(chart_items) == 2 else "bar"
     chart_obj = {"items": chart_items, "max": chart_max, "type": chart_type}
 
+    headline = c.get("headline", "").strip()
+    headline_lines = wrap_headline(headline)
+
     return {
         "canvas": {"w": 1080, "h": 1080, "margin": 72},
         "text": {
-            "headline": c.get("headline","").strip(),
+            "headline": headline,
+            "headline_lines": headline_lines,
             "dek": c.get("dek","").strip(),
             "keywords": c.get("keywords", [])[:6],
             "key_points": kp,
@@ -418,6 +510,8 @@ def generate_draft_with_openai(article_text: str, title_hint: str = "") -> dict:
         return fallback
     prompt = f"""다음 기사 내용을 인포그래픽 초안으로 요약하세요. 반드시 JSON만 출력.
 형식: {{"headline":"","dek":"","key_points":["","",""],"callout_title":"","callout_body":"","quote_text":""}}
+
+key_points 작성 기준: 기사에서 독자가 알아야 할 핵심 인사이트 3개 작성. 숫자와 의미 포함, 짧고 강하게, 뉴스 톤 유지.
 
 기사:
 {(article_text or "")[:6000]}
@@ -496,7 +590,11 @@ def run_desk_mode():
             st.session_state.spec["content"]["quote"]["text"] = draft.get("quote_text", "")
 
             nums_raw = extract_numbers_with_context(article_text, limit=10)
-            nums_refined = refine_numbers_with_openai(nums_raw, st.session_state.spec["meta"].get("title", ""))
+            nums_refined = refine_numbers_with_openai(
+                nums_raw,
+                title_hint=st.session_state.spec["meta"].get("title", ""),
+                text=st.session_state.get("article_text", ""),
+            )
             st.session_state.spec["content"]["numbers"] = nums_refined
             st.session_state["template_hint"] = "data_focus" if len(nums_refined) >= 2 else "story_lite"
             st.success("AI 초안 생성 완료")
@@ -515,6 +613,30 @@ def run_desk_mode():
                 )
                 st.session_state["desk_report"] = report
             st.success("데스크 리포트 생성 완료")
+
+        do_label = st.button("🧠 라벨 자동 생성", use_container_width=True)
+        if do_label:
+            article_text = st.session_state.get("article_text", "")
+            numbers = list(st.session_state.spec["content"].get("numbers", []))
+            if not article_text:
+                st.warning("먼저 URL 불러오기를 하세요.")
+                st.stop()
+            if not numbers:
+                st.warning("먼저 AI 초안을 실행해 숫자를 추출하세요.")
+                st.stop()
+            with st.spinner("라벨 생성 중..."):
+                enriched = enrich_labels(
+                    st.session_state.spec["meta"].get("title", ""),
+                    "",
+                    article_text,
+                    numbers,
+                )
+            items = enriched.get("items") or []
+            for i, n in enumerate(numbers):
+                if i < len(items) and items[i].get("label"):
+                    n["label"] = (items[i].get("label") or "").strip()
+            st.session_state.spec["content"]["numbers"] = numbers
+            st.success("라벨 적용 완료")
 
         st.divider()
 
@@ -657,6 +779,7 @@ def run_public_mode():
             nums_refined = refine_numbers_with_openai(
                 nums_raw,
                 title_hint=st.session_state.spec["meta"].get("title", ""),
+                text=article_text,
             )
             st.session_state.spec["content"]["numbers"] = nums_refined
             st.session_state["template_hint"] = "data_focus" if len(nums_refined) >= 2 else "story_lite"
@@ -695,6 +818,28 @@ def run_public_mode():
 
         with st.expander("추출된 숫자(자동) 확인", expanded=False):
             st.json(st.session_state.spec["content"].get("numbers", []))
+            if st.button("🧠 라벨 자동 생성", key="label_public"):
+                article_text = st.session_state.get("article_text", "")
+                numbers = list(st.session_state.spec["content"].get("numbers", []))
+                if not article_text:
+                    st.warning("먼저 URL을 불러온 뒤 초안을 생성하세요.")
+                elif not numbers:
+                    st.warning("추출된 숫자가 없습니다. 자동 초안 또는 AI 초안을 먼저 실행하세요.")
+                else:
+                    with st.spinner("라벨 생성 중..."):
+                        enriched = enrich_labels(
+                            st.session_state.spec["meta"].get("title", ""),
+                            "",
+                            article_text,
+                            numbers,
+                        )
+                    items = enriched.get("items") or []
+                    for i, n in enumerate(numbers):
+                        if i < len(items) and items[i].get("label"):
+                            n["label"] = (items[i].get("label") or "").strip()
+                    st.session_state.spec["content"]["numbers"] = numbers
+                    st.success("라벨 적용 완료")
+                    st.rerun()
 
         with st.expander("수정(선택) — 헤드라인/키포인트만 다듬기", expanded=False):
             title = st.text_input("제목(원문)", value=st.session_state.spec["meta"]["title"])
