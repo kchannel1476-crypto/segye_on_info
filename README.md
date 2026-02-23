@@ -19,5 +19,5 @@ PNG 변환·폰트 폴백이 필요할 때:
 
 ```bash
 # Debian/Ubuntu
-sudo apt install fonts-noto-cjk fonts-noto-color-emoji
+sudo apt install fonts-noto-cjk fonts-noto-cjk-extra fonts-noto-color-emoji
 ```
