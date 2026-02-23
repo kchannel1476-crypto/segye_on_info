@@ -13,11 +13,17 @@ PNG 다운로드 시 한글이 깨지지 않으려면:
    TTF 파일을 더블클릭해 "설치"를 누르면, cairosvg가 시스템 폰트를 사용해 PNG에 한글이 나옵니다.  
    (cairosvg는 임베드 폰트를 지원하지 않고 시스템/로컬 폰트만 사용할 수 있습니다.)
 
-## 시스템 폰트 (선택, Linux/서버)
+## 시스템 의존성 (Linux/서버)
 
-PNG 변환·폰트 폴백이 필요할 때:
+PNG 변환(cairosvg) 및 한글 표시를 위해:
 
 ```bash
-# Debian/Ubuntu
-sudo apt install fonts-noto-cjk fonts-noto-cjk-extra fonts-noto-color-emoji
+# Debian/Ubuntu — cairosvg 라이브러리 + 한글 폰트
+sudo apt install \
+  libcairo2 \
+  libpango-1.0-0 \
+  libpangocairo-1.0-0 \
+  libgdk-pixbuf-2.0-0 \
+  fonts-noto-cjk \
+  fonts-noto-cjk-extra
 ```
