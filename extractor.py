@@ -157,7 +157,80 @@ def extract_numbers_with_context(text: str, max_items: int = 12) -> List[Dict[st
         if len(results) >= max_items:
             break
 
+    results = postprocess_numbers(results)
     return results
+
+
+def _is_noise_number(raw: str, context: str) -> bool:
+    raw = (raw or "").strip()
+    ctx = (context or "").strip()
+
+    # URL/조회 ID/기사번호/타임스탬프류
+    if "newsView" in ctx or "http" in ctx or "www." in ctx:
+        return True
+
+    # 날짜/시간 같은 흔한 노이즈: 2026-02-23, 08:59:53, 20260223 등
+    if re.search(r"\b20\d{2}[-/\.]\d{1,2}[-/\.]\d{1,2}\b", ctx):
+        return True
+    if re.search(r"\b\d{1,2}:\d{2}(:\d{2})?\b", ctx):
+        return True
+    if re.search(r"\b20\d{6,}\b", raw):  # 20260223 같은 덩어리
+        return True
+
+    # 페이지/회/차수/기수 같은 메타성 숫자
+    if re.search(r"(제\s*\d+\s*(회|차|기)|\d+\s*(회|차|기))", ctx):
+        return True
+
+    return False
+
+
+def postprocess_numbers(nums: List[Dict[str, Any]], title: str = "") -> List[Dict[str, Any]]:
+    # 1) 노이즈 제거
+    cleaned = []
+    seen = set()
+    for n in nums:
+        raw = n.get("raw", "")
+        ctx = n.get("context", "")
+        if _is_noise_number(raw, ctx):
+            continue
+
+        key = (str(n.get("value")), n.get("unit", ""), raw)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        cleaned.append(n)
+
+    # 2) 우선순위 점수 (KPI에 쓸만한 것 먼저)
+    def score(n):
+        unit = n.get("unit", "")
+        raw = n.get("raw", "")
+        ctx = n.get("context", "")
+        s = 0
+        if "%" in unit or "%p" in unit:
+            s += 50
+        if unit in ("명", "건", "개"):
+            s += 35
+        if unit in ("조", "억", "만", "원"):
+            s += 30
+        if unit in ("년", "개월", "일", "시간"):
+            s += 20
+        # 기사 제목 근처에서 등장한 숫자를 조금 가산 (대충)
+        if title and title[:12] and (title[:12] in ctx):
+            s += 8
+        # context가 길수록(문맥 풍부) 가산
+        s += min(len(ctx), 180) / 60
+        # 너무 작은 수(1,2 등)는 KPI로 의미 없을 확률 높아서 감점(단, % 제외)
+        try:
+            v = float(n.get("value"))
+            if v <= 2 and ("%" not in unit):
+                s -= 10
+        except Exception:
+            pass
+        return s
+
+    cleaned.sort(key=score, reverse=True)
+    return cleaned
 
 
 def has_numbers(text: str) -> bool:
@@ -177,3 +250,117 @@ def extract_numbers(text: str, limit: int = 8) -> list[str]:
         if len(out) >= limit:
             break
     return out
+
+
+def _kpi_bucket(unit: str) -> str:
+    u = (unit or "").strip()
+    if "%" in u:  # %, %p
+        return "ratio"
+    if u in ("명", "건", "개"):
+        return "count"
+    if u in ("원", "만", "억", "조") or ("원" in u):
+        return "money"
+    if u in ("년", "개월", "일", "시간"):
+        return "time"
+    return "other"
+
+
+def _kpi_score(n: Dict[str, Any]) -> float:
+    # postprocess_numbers에서 쓰던 score를 여기서도 재사용할 수 있게 단독으로 둠
+    unit = n.get("unit", "")
+    ctx = n.get("context", "") or ""
+    s = 0.0
+    if "%" in unit:
+        s += 50
+    if unit in ("명", "건", "개"):
+        s += 35
+    if unit in ("조", "억", "만", "원") or ("원" in unit):
+        s += 30
+    if unit in ("년", "개월", "일", "시간"):
+        s += 20
+
+    s += min(len(ctx), 180) / 60.0  # 0~3점 정도
+
+    # 너무 작은 수 감점(단, %는 제외)
+    try:
+        v = float(n.get("value"))
+        if v <= 2 and ("%" not in unit):
+            s -= 10
+    except Exception:
+        pass
+
+    # label이 이미 있으면 조금 가산(추후 AI 라벨 이후 재정렬에도 유용)
+    if (n.get("label") or "").strip():
+        s += 5
+
+    return s
+
+
+def choose_kpis(nums: List[Dict[str, Any]], k: int = 4) -> List[Dict[str, Any]]:
+    """
+    nums 후보들 중 '구성 좋은 k개'를 선택:
+    - ratio(%) 1~2
+    - count(명/건/개) 1
+    - money/time는 있으면 1개씩 우선
+    - 나머지는 점수 상위로 채움
+    """
+    if not nums:
+        return []
+
+    # 1) 점수 계산 + 정렬
+    candidates = []
+    for n in nums:
+        nn = dict(n)
+        nn["_score"] = _kpi_score(nn)
+        candidates.append(nn)
+    candidates.sort(key=lambda x: x["_score"], reverse=True)
+
+    # 2) 버킷별로 분리(점수순 유지)
+    buckets = {"ratio": [], "count": [], "money": [], "time": [], "other": []}
+    for n in candidates:
+        buckets[_kpi_bucket(n.get("unit", ""))].append(n)
+
+    picked = []
+
+    def take(bucket_name: str, limit: int):
+        nonlocal picked
+        for n in buckets[bucket_name]:
+            if len(picked) >= k:
+                return
+            # 같은 값/단위 과도 중복 방지
+            key = (str(n.get("value")), n.get("unit", ""))
+            if any((str(p.get("value")), p.get("unit", "")) == key for p in picked):
+                continue
+            picked.append(n)
+            if sum(1 for p in picked if _kpi_bucket(p.get("unit","")) == bucket_name) >= limit:
+                return
+
+    # 3) 구성 규칙대로 담기
+    # ratio 1개는 무조건 우선(있다면)
+    take("ratio", 1)
+
+    # count 1개 (있다면)
+    take("count", 1)
+
+    # money/time는 있으면 1개씩
+    take("money", 1)
+    take("time", 1)
+
+    # ratio가 많으면 2개까지 허용(남는 자리 있을 때)
+    if len(picked) < k:
+        take("ratio", 2)
+
+    # 남는 자리는 전체 후보 점수순으로 채움
+    if len(picked) < k:
+        for n in candidates:
+            if len(picked) >= k:
+                break
+            key = (str(n.get("value")), n.get("unit", ""))
+            if any((str(p.get("value")), p.get("unit", "")) == key for p in picked):
+                continue
+            picked.append(n)
+
+    # _score 제거 후 반환
+    for p in picked:
+        p.pop("_score", None)
+    return picked[:k]

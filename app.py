@@ -209,10 +209,14 @@ def infer_kpi_labels_with_ai(
 
     system = (
         "너는 세계일보 인포그래픽 편집 데스크다. "
-        "주어진 기사 제목/본문의 문맥을 근거로 숫자 KPI의 의미 라벨을 만든다. "
-        "절대 추측으로 사실을 만들지 말고, 문맥이 불충분하면 label을 빈 문자열로 두거나 "
-        "note에 '문맥 부족'이라고 써라. "
-        "라벨은 최대 8~10자 정도의 짧은 명사구로."
+        "입력: 기사 제목/본문 일부 + 숫자리스트(numbers: value/unit/raw/context). "
+        "출력: 각 숫자에 대해 '라벨(label)'을 만든다.\n\n"
+        "규칙:\n"
+        "1) 반드시 context(문장)에서 의미가 확인될 때만 라벨을 채운다.\n"
+        "2) 의미가 불명확하면 label은 빈 문자열로 두고 note에 '문맥 부족'이라고 적는다.\n"
+        "3) 라벨은 6~10자 내의 짧은 명사구(예: '찬성 비율', '응답자 수', '피해자 수').\n"
+        "4) 절대 기사에 없는 단어/수치를 만들어내지 않는다.\n"
+        "5) trend는 ▲/▼/증가/감소/상승/하락이 context/raw에 있을 때만 up/down, 아니면 neutral.\n"
     )
 
     user = {
@@ -247,13 +251,15 @@ def infer_kpi_labels_with_ai(
             out = next((x for x in kpis if isinstance(x, dict) and x.get("index") == i), None)
             label = (out.get("label") if out else "") or ""
             note = (out.get("note") if out else "") or n.get("note", "") or ""
-            trend = (out.get("trend") if out else "") or n.get("trend", "neutral") or "neutral"
+            trend_src = (n.get("raw", "") + " " + n.get("context", "")).strip()
+            trend = (out.get("trend") if out else "") or classify_trend(trend_src)
+            trend = trend if trend in ("up", "down", "neutral") else "neutral"
 
             merged.append({
                 **n,
                 "label": label.strip(),
                 "note": note.strip(),
-                "trend": trend if trend in ("up", "down", "neutral") else "neutral",
+                "trend": trend,
             })
 
         return merged
@@ -452,7 +458,7 @@ def analyze_for_desk(article_text: str, title_hint: str = "", url: str = "") -> 
 
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from extractor import extract_article, has_numbers, extract_numbers_with_context
+from extractor import extract_article, has_numbers, extract_numbers_with_context, choose_kpis
 
 DESK_KEY = "원하는_긴_비밀번호"
 
@@ -635,6 +641,7 @@ def default_spec():
             ],
             "quote":{"speaker":"", "org":"", "text":""},
             "numbers":[],
+            "numbers_all":[],
             "charts":[],
             "timeline":[],
             "comparison":{"left_title":"", "right_title":"", "items":[]},
@@ -861,9 +868,11 @@ def run_desk_mode():
             if not st.session_state.spec["content"]["headline"]:
                 st.session_state.spec["content"]["headline"] = (data.title or "").strip()
 
-            nums = extract_numbers_with_context(data.content, max_items=12)
-            st.session_state.spec["content"]["numbers"] = nums
-            st.session_state["template_hint"] = "data_focus" if len(nums) >= 2 else "story_lite"
+            nums = extract_numbers_with_context(data.content, max_items=20)
+            st.session_state.spec["content"]["numbers_all"] = nums or []
+            # ✅ 조합 선택 알고리즘으로 KPI 4개 구성
+            st.session_state.spec["content"]["numbers"] = choose_kpis(nums or [], k=4)
+            st.session_state["template_hint"] = "data_focus" if len(st.session_state.spec["content"]["numbers"]) >= 2 else "story_lite"
 
             st.success("기사 로드 완료")
 
@@ -1085,9 +1094,11 @@ def run_public_mode():
                 if not st.session_state.spec["content"]["headline"]:
                     st.session_state.spec["content"]["headline"] = (data.title or "").strip()
 
-                nums = extract_numbers_with_context(data.content, max_items=12)
-                st.session_state.spec["content"]["numbers"] = nums
-                st.session_state["template_hint"] = "data_focus" if len(nums) >= 2 else "story_lite"
+                nums = extract_numbers_with_context(data.content, max_items=20)
+                st.session_state.spec["content"]["numbers_all"] = nums or []
+                # ✅ 조합 선택 알고리즘으로 KPI 4개 구성
+                st.session_state.spec["content"]["numbers"] = choose_kpis(nums or [], k=4)
+                st.session_state["template_hint"] = "data_focus" if len(st.session_state.spec["content"]["numbers"]) >= 2 else "story_lite"
 
                 st.success("기사 정보를 불러왔습니다. 다음으로 '자동 초안 생성'을 눌러주세요.")
             except Exception as e:
