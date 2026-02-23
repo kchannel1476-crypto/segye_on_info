@@ -235,6 +235,21 @@ def build_render_model(spec: dict) -> dict:
     comp_items = (comp.get("items") or [])[:6]
     compare_rows = [{"left": i.get("left", ""), "right": i.get("right", "")} for i in comp_items]
 
+    # --- Chart data preparation ---
+    chart_items = []
+    values = []
+    for n in nums:
+        raw = (n.get("value") or "").replace(",", "")
+        try:
+            val = float(raw)
+            values.append(val)
+            chart_items.append({"label": n.get("label", ""), "value": val})
+        except Exception:
+            continue
+    chart_max = max(values) if values else 0
+    for item in chart_items:
+        item["norm"] = item["value"] / chart_max if chart_max > 0 else 0
+
     return {
         "canvas": {"w": 1080, "h": 1080, "margin": 72},
         "text": {
@@ -262,6 +277,10 @@ def build_render_model(spec: dict) -> dict:
             "has_callout": bool(callout_title or callout_body)
         },
         "numbers": nums,
+        "chart": {
+            "items": chart_items,
+            "max": chart_max
+        },
     }
 
 # -----------------------------

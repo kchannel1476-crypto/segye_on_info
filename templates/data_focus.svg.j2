@@ -76,8 +76,35 @@
     {% endif %}
   </g>
 
+  {% if chart.items and chart.items|length >= 2 %}
+  {% set chartY = gridY + (cardH*2) + gap + 10 %}
+  {% set chartX = M %}
+  {% set chartW = W - (M*2) %}
+  {% set barH = 24 %}
+  {% set barGap = 26 %}
+
+  <g id="auto_chart" transform="translate({{ chartX }}, {{ chartY }})">
+    <text class="kpiLabel" x="0" y="0">수치 비교</text>
+
+    {% for item in chart.items[:4] %}
+      {% set yy = 28 + loop.index0 * (barH + barGap) %}
+      <text class="kpiLabel" x="0" y="{{ yy + 18 }}">{{ item.label }}</text>
+
+      <rect x="220" y="{{ yy }}" width="{{ chartW - 240 }}" height="{{ barH }}"
+            fill="#EFEFEF" rx="12" ry="12"/>
+
+      <rect x="220" y="{{ yy }}" width="{{ (chartW - 240) * item.norm }}"
+            height="{{ barH }}" fill="#111111" rx="12" ry="12"/>
+
+      <text class="kpiNote" x="{{ chartW - 100 }}" y="{{ yy + 18 }}">
+        {{ item.value }}
+      </text>
+    {% endfor %}
+  </g>
+  {% endif %}
+
   {# --- Key Points (2개만 노출) --- #}
-  {% set kpY = gridY + (cardH*2) + gap + 26 %}
+  {% set kpY = gridY + (cardH*2) + gap + 180 %}
   {% set kpX = M %}
   {% set kpW = W - (M*2) %}
 
