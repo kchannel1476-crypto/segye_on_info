@@ -1,5 +1,8 @@
 import os
 import base64
+import tempfile
+import shutil
+from pathlib import Path
 from urllib.parse import urlparse
 import time
 import re
@@ -75,50 +78,56 @@ def _find_font_path(filename: str) -> str:
     return ""
 
 
-def _embed_font_base64_from_path(path: str) -> str:
-    """TTF 파일을 읽어 base64 데이터 URI 문자열 반환."""
-    if not path or not os.path.isfile(path):
-        return ""
+def _prepare_fonts_for_png() -> tuple[str, str]:
+    """
+    PNG 변환용 폰트 file:// URI 반환.
+    TTF를 임시 디렉터리에 복사해 짧은 경로의 file:// 로 씀 (cairosvg는 base64 미지원, file:// 시도).
+    반환: (uri_regular, uri_bold)
+    """
+    uri_r, uri_b = "", ""
     try:
-        with open(path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode("ascii")
-        return f"data:font/ttf;base64,{b64}"
+        tmp = tempfile.mkdtemp(prefix="segye_fonts_")
+        for name in ("NotoSansKR-Regular.ttf", "NotoSansKR-Bold.ttf"):
+            src = _find_font_path(name)
+            if not src or not os.path.isfile(src):
+                continue
+            dst = os.path.join(tmp, name)
+            shutil.copy2(src, dst)
+            uri = Path(dst).resolve().as_uri()
+            if "Regular" in name:
+                uri_r = uri
+            else:
+                uri_b = uri
+        # 임시 폴더는 프로세스 종료 시 정리되도록 둠 (또는 atexit로 삭제 가능)
     except Exception:
-        return ""
+        pass
+    return (uri_r, uri_b)
 
 
 def svg_fonts_to_absolute_paths(svg: str) -> str:
-    """PNG 변환 시 한글 폰트가 적용되도록 TTF를 찾아 SVG에 base64로 임베드 (file:// 대신 임베드 사용)."""
+    """
+    PNG 변환 시 한글 폰트가 적용되도록 SVG의 폰트 URL을 file:// 절대 경로로 치환.
+    cairosvg는 base64 @font-face를 지원하지 않으므로, TTF를 임시 폴더에 복사한 file:// 사용.
+    """
     if not svg:
         return svg
+    uri_regular, uri_bold = _prepare_fonts_for_png()
     out = svg
-    data_regular = ""
-    data_bold = ""
-    for name in ("NotoSansKR-Regular.ttf", "NotoSansKR-Bold.ttf"):
-        path = _find_font_path(name)
-        if path:
-            data_uri = _embed_font_base64_from_path(path)
-            if data_uri:
-                if "Regular" in name:
-                    data_regular = data_uri
-                else:
-                    data_bold = data_uri
-    # url("fonts/...") 또는 기존 data URI → 새 base64 임베드 (한 번에 치환)
-    if data_regular:
-        out = out.replace('url("fonts/NotoSansKR-Regular.ttf")', f'url("{data_regular}")')
-        out = out.replace("url('fonts/NotoSansKR-Regular.ttf')", f'url("{data_regular}")')
+    if uri_regular:
+        out = out.replace('url("fonts/NotoSansKR-Regular.ttf")', f'url("{uri_regular}")')
+        out = out.replace("url('fonts/NotoSansKR-Regular.ttf')", f'url("{uri_regular}")')
         out = re.sub(
             r'url\("data:font/ttf;base64,[^"]+"\)(?=\s*format\(\'truetype\'\)\s*;\s*font-weight:\s*400)',
-            f'url("{data_regular}")',
+            f'url("{uri_regular}")',
             out,
             count=1,
         )
-    if data_bold:
-        out = out.replace('url("fonts/NotoSansKR-Bold.ttf")', f'url("{data_bold}")')
-        out = out.replace("url('fonts/NotoSansKR-Bold.ttf')", f'url("{data_bold}")')
+    if uri_bold:
+        out = out.replace('url("fonts/NotoSansKR-Bold.ttf")', f'url("{uri_bold}")')
+        out = out.replace("url('fonts/NotoSansKR-Bold.ttf')", f'url("{uri_bold}")')
         out = re.sub(
             r'url\("data:font/ttf;base64,[^"]+"\)(?=\s*format\(\'truetype\'\)\s*;\s*font-weight:\s*700)',
-            f'url("{data_bold}")',
+            f'url("{uri_bold}")',
             out,
             count=1,
         )
