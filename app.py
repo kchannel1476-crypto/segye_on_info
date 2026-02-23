@@ -169,14 +169,29 @@ with left:
         st.code(json.dumps(st.session_state.spec, ensure_ascii=False, indent=2), language="json")
 
 with right:
-    st.subheader("미리보기 (고정)")
+    st.subheader("미리보기(고정)")
     if st.session_state.svg:
-        html_wrap = f'<div style="display:flex;justify-content:center;background:#f0f0f0;padding:24px;"><div style="box-shadow:0 4px 20px rgba(0,0,0,0.12);">{st.session_state.svg}</div></div>'
-        st.components.v1.html(html_wrap, height=1120, scrolling=True)
-        st.download_button("SVG 다운로드", data=st.session_state.svg.encode("utf-8"), file_name="segye_infographic.svg", mime="image/svg+xml")
+        st.components.v1.html(st.session_state.svg, height=1120, scrolling=True)
 
-        # PNG 변환(원하시면 활성화)
-        # png_bytes = cairosvg.svg2png(bytestring=st.session_state.svg.encode("utf-8"))
-        # st.download_button("PNG 다운로드", data=png_bytes, file_name="segye_infographic.png", mime="image/png")
+        st.download_button(
+            label="SVG 다운로드",
+            data=st.session_state.svg.encode("utf-8"),
+            file_name="segye_infographic.svg",
+            mime="image/svg+xml"
+        )
+
+        # PNG는 실패할 수 있으니 try/except로 감싸서 버튼 노출/에러 표시
+        try:
+            import cairosvg
+            png_bytes = cairosvg.svg2png(bytestring=st.session_state.svg.encode("utf-8"))
+            st.download_button(
+                label="PNG 다운로드",
+                data=png_bytes,
+                file_name="segye_infographic.png",
+                mime="image/png"
+            )
+        except Exception as e:
+            st.warning(f"PNG 변환 실패: {e}")
+
     else:
-        st.info("좌측에서 내용을 입력/수정한 뒤, '생성(렌더)'를 누르면 여기에 인포그래픽이 표시됩니다.")
+        st.info("좌측에서 입력/수정 후 '생성(렌더)'를 누르면 여기에서 결과를 확인할 수 있습니다.")
