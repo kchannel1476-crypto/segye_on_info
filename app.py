@@ -3,6 +3,7 @@ import base64
 import tempfile
 import shutil
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 import time
 import re
@@ -135,6 +136,10 @@ def svg_fonts_to_absolute_paths(svg: str) -> str:
 
 
 def get_openai_client():
+    try:
+        from openai import OpenAI
+    except Exception:
+        return None
     key = None
     try:
         key = st.secrets.get("OPENAI_API_KEY")
@@ -143,8 +148,119 @@ def get_openai_client():
     key = key or os.getenv("OPENAI_API_KEY")
     if not key:
         return None
-    from openai import OpenAI
     return OpenAI(api_key=key)
+
+
+def _safe_json_loads(s: str):
+    """JSON 파싱. 실패 시 문자열에서 마지막 {} 블록 추출 후 재시도."""
+    if not s or not s.strip():
+        return None
+    try:
+        return json.loads(s)
+    except Exception:
+        m = re.search(r"\{.*\}", s, flags=re.S)
+        if not m:
+            return None
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            return None
+
+
+def infer_kpi_labels_with_ai(
+    title: str,
+    article_text: str,
+    numbers: List[Dict[str, Any]],
+    publisher: str = "세계일보",
+) -> Optional[List[Dict[str, Any]]]:
+    """
+    numbers item 예시(권장):
+      {
+        "value": 35,
+        "unit": "%",
+        "raw": "35%",
+        "context": "…찬성 비율은 35%…",
+        "note": "",
+        "trend": "neutral"
+      }
+    """
+    client = get_openai_client()
+    if not client:
+        return None
+
+    text = (article_text or "").strip()
+    if len(text) > 6000:
+        text = text[:3500] + "\n...\n" + text[-2000:]
+
+    nums = (numbers or [])[:12]
+
+    schema_hint = {
+        "kpis": [
+            {
+                "index": 0,
+                "label": "무엇의 수치인지(짧게)",
+                "value": "원본 value 유지",
+                "unit": "원본 unit 유지(없으면 빈문자)",
+                "note": "필요하면 10~18자 설명(선택)",
+                "trend": "up|down|neutral (선택, 모르면 neutral)"
+            }
+        ]
+    }
+
+    system = (
+        "너는 세계일보 인포그래픽 편집 데스크다. "
+        "주어진 기사 제목/본문의 문맥을 근거로 숫자 KPI의 의미 라벨을 만든다. "
+        "절대 추측으로 사실을 만들지 말고, 문맥이 불충분하면 label을 빈 문자열로 두거나 "
+        "note에 '문맥 부족'이라고 써라. "
+        "라벨은 최대 8~10자 정도의 짧은 명사구로."
+    )
+
+    user = {
+        "publisher": publisher,
+        "title": title,
+        "article_excerpt": text,
+        "numbers": nums,
+        "output_schema": schema_hint
+    }
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
+            ],
+            response_format={"type": "json_object"},
+        )
+        content = resp.choices[0].message.content
+        data = _safe_json_loads(content or "")
+        if not data or "kpis" not in data:
+            return None
+
+        kpis = data["kpis"]
+        if not isinstance(kpis, list):
+            return None
+
+        merged = []
+        for i, n in enumerate(nums):
+            out = next((x for x in kpis if isinstance(x, dict) and x.get("index") == i), None)
+            label = (out.get("label") if out else "") or ""
+            note = (out.get("note") if out else "") or n.get("note", "") or ""
+            trend = (out.get("trend") if out else "") or n.get("trend", "neutral") or "neutral"
+
+            merged.append({
+                **n,
+                "label": label.strip(),
+                "note": note.strip(),
+                "trend": trend if trend in ("up", "down", "neutral") else "neutral",
+            })
+
+        return merged
+
+    except Exception as e:
+        st.warning(f"AI 라벨 생성 실패: {e}")
+        return None
 
 
 def enrich_labels(title: str, summary: str, text: str, numbers: list[dict]) -> dict:
@@ -634,8 +750,8 @@ def build_render_model(spec: dict) -> dict:
             "has_quote": bool(quote_line),
             "has_callout": bool(callout_title or callout_body)
         },
-        "numbers": numbers_escaped,
-        "chart": chart_obj,
+        "numbers": c.get("numbers", []),
+        "chart": (c.get("charts") or [None])[0],
     }
 
 # -----------------------------
@@ -728,6 +844,10 @@ def run_desk_mode():
             if not st.session_state.spec["content"]["headline"]:
                 st.session_state.spec["content"]["headline"] = (data.title or "").strip()
 
+            nums = extract_numbers_with_context(data.content, limit=12)
+            st.session_state.spec["content"]["numbers"] = nums
+            st.session_state["template_hint"] = "data_focus" if len(nums) >= 2 else "story_lite"
+
             st.success("기사 로드 완료")
 
         if do_draft:
@@ -794,6 +914,28 @@ def run_desk_mode():
                     n["label"] = (items[i].get("label") or "").strip()
             st.session_state.spec["content"]["numbers"] = numbers
             st.success("라벨 적용 완료")
+
+        st.divider()
+        st.subheader("KPI 라벨 자동 생성(AI)")
+        if st.button("AI로 KPI 라벨 채우기", use_container_width=True, key="kpi_label_desk"):
+            numbers = st.session_state.spec["content"].get("numbers", [])
+            if not numbers:
+                st.info("추출된 수치가 없습니다. (본문에 숫자가 없거나 추출 규칙에 안 잡혔어요)")
+            else:
+                title = st.session_state.spec["meta"].get("title", "") or st.session_state.spec["content"].get("headline", "")
+                article_text = st.session_state.get("article_text", "") or ""
+                labeled = infer_kpi_labels_with_ai(
+                    title=title,
+                    article_text=article_text,
+                    numbers=numbers,
+                    publisher=st.session_state.spec["meta"].get("publisher", "세계일보")
+                )
+                if labeled:
+                    st.session_state.spec["content"]["numbers"] = labeled
+                    st.success("KPI 라벨을 채웠습니다. (필요하면 일부만 수정 후 렌더하세요.)")
+                    st.session_state.dirty = True
+                else:
+                    st.info("AI 라벨 생성 결과가 없거나 실패했습니다. (API 키/본문/숫자 추출을 확인)")
 
         st.divider()
 
@@ -926,6 +1068,10 @@ def run_public_mode():
                 if not st.session_state.spec["content"]["headline"]:
                     st.session_state.spec["content"]["headline"] = (data.title or "").strip()
 
+                nums = extract_numbers_with_context(data.content, limit=12)
+                st.session_state.spec["content"]["numbers"] = nums
+                st.session_state["template_hint"] = "data_focus" if len(nums) >= 2 else "story_lite"
+
                 st.success("기사 정보를 불러왔습니다. 다음으로 '자동 초안 생성'을 눌러주세요.")
             except Exception as e:
                 st.error(f"URL 불러오기 실패: {e}")
@@ -1009,6 +1155,28 @@ def run_public_mode():
                     st.session_state.spec["content"]["numbers"] = numbers
                     st.success("라벨 적용 완료")
                     st.rerun()
+
+        st.divider()
+        st.subheader("KPI 라벨 자동 생성(AI)")
+        if st.button("AI로 KPI 라벨 채우기", use_container_width=True, key="kpi_label_public"):
+            numbers = st.session_state.spec["content"].get("numbers", [])
+            if not numbers:
+                st.info("추출된 수치가 없습니다. (본문에 숫자가 없거나 추출 규칙에 안 잡혔어요)")
+            else:
+                title = st.session_state.spec["meta"].get("title", "") or st.session_state.spec["content"].get("headline", "")
+                article_text = st.session_state.get("article_text", "") or ""
+                labeled = infer_kpi_labels_with_ai(
+                    title=title,
+                    article_text=article_text,
+                    numbers=numbers,
+                    publisher=st.session_state.spec["meta"].get("publisher", "세계일보")
+                )
+                if labeled:
+                    st.session_state.spec["content"]["numbers"] = labeled
+                    st.success("KPI 라벨을 채웠습니다. (필요하면 일부만 수정 후 렌더하세요.)")
+                    st.session_state.dirty = True
+                else:
+                    st.info("AI 라벨 생성 결과가 없거나 실패했습니다. (API 키/본문/숫자 추출을 확인)")
 
         with st.expander("수정(선택) — 헤드라인/키포인트만 다듬기", expanded=False):
             title = st.text_input("제목(원문)", value=st.session_state.spec["meta"]["title"])

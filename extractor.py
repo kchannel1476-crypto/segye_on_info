@@ -2,7 +2,7 @@
 from __future__ import annotations
 import re
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 import requests
 from bs4 import BeautifulSoup
@@ -101,6 +101,85 @@ def extract_article(url: str) -> ArticleExtract:
 _NUM_RE = re.compile(r"(?<!\w)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:%|조|억|만|원|명|건|배|년|월|일)?(?!\w)")
 
 
+def _split_sentences_ko(text: str) -> List[str]:
+    text = (text or "").strip()
+    if not text:
+        return []
+    text = re.sub(r"\s+", " ", text)
+    sents = re.split(r"(?<=[\.\?\!]|다|요|함|됨)\s+", text)
+    sents = [s.strip() for s in sents if s and s.strip()]
+    return sents
+
+
+def _normalize_number(value_str: str) -> float:
+    v = (value_str or "").replace(",", "").strip()
+    return float(v)
+
+
+def extract_numbers_with_context(
+    text: str, limit: int = 12, context_chars: int = 40
+) -> List[Dict[str, Any]]:
+    """
+    반환 예:
+    [
+      {"value": 35, "unit": "%", "raw": "35%", "context": "…", "label": "", "note": "", "trend": "neutral"},
+      ...
+    ]
+    """
+    sents = _split_sentences_ko(text)
+    if not sents:
+        return []
+
+    patterns = [
+        r"(?P<num>\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?P<unit>%p|%|명|건|개|년|개월|일|시간|배|p)\b",
+        r"(?P<num>\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?P<unit>조|억|만)\s*(?P<tail>원)?",
+        r"(?P<num>\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?P<unit>원)\b",
+    ]
+    rx = re.compile("|".join(f"({p})" for p in patterns))
+
+    found = []
+    seen = set()
+
+    for sent in sents:
+        for m in rx.finditer(sent):
+            gd = {k: v for k, v in (m.groupdict() or {}).items() if v}
+            num_str = gd.get("num")
+            unit = gd.get("unit") or ""
+            tail = gd.get("tail") or ""
+            if not num_str:
+                continue
+
+            raw = (m.group(0) or "").strip()
+            key = (num_str, unit, raw)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            try:
+                val = _normalize_number(num_str)
+            except Exception:
+                continue
+
+            norm_unit = unit + (tail if tail else "")
+
+            found.append({
+                "value": int(val) if float(val).is_integer() else float(val),
+                "unit": norm_unit,
+                "raw": raw,
+                "context": sent[:180],
+                "label": "",
+                "note": "",
+                "trend": "neutral",
+            })
+
+            if len(found) >= limit:
+                break
+        if len(found) >= limit:
+            break
+
+    return found
+
+
 def has_numbers(text: str) -> bool:
     if not text:
         return False
@@ -111,31 +190,10 @@ def extract_numbers(text: str, limit: int = 8) -> list[str]:
     if not text:
         return []
     found = _NUM_RE.findall(text)
-    # 중복 제거(순서 유지)
     out = []
     for x in found:
         if x not in out:
             out.append(x)
         if len(out) >= limit:
             break
-    return out
-
-
-def extract_numbers_with_context(text: str, limit: int = 8, context_chars: int = 40) -> list[dict]:
-    """숫자와 주변 맥락(문맥)을 함께 반환. [{"value": str, "context": str}, ...]"""
-    if not text:
-        return []
-    out = []
-    seen = set()
-    for m in _NUM_RE.finditer(text):
-        if len(out) >= limit:
-            break
-        val = m.group(0)
-        if val in seen:
-            continue
-        seen.add(val)
-        start = max(0, m.start() - context_chars)
-        end = min(len(text), m.end() + context_chars)
-        ctx = text[start:end].replace("\n", " ").strip()
-        out.append({"value": val, "context": ctx})
     return out
