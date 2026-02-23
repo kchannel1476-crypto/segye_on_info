@@ -69,15 +69,20 @@
         {% set y = row * (cardH + gap) %}
         <g class="kpi_card">
           <rect class="card" x="{{ x }}" y="{{ y }}" width="{{ cardW }}" height="{{ cardH }}" />
-          <text class="kpiLabel" x="{{ x + 28 }}" y="{{ y + 52 }}">{{ n.label }}</text>
-          <text class="kpiVal {{ n.trend }}" x="{{ x + 28 }}" y="{{ y + 108 }}">{{ n.value }}{{ n.unit }}</text>
-          {% if n.trend == "up" %}
-          <text x="{{ x + cardW - 60 }}" y="{{ y + 108 }}" font-size="24">▲</text>
-          {% elif n.trend == "down" %}
-          <text x="{{ x + cardW - 60 }}" y="{{ y + 108 }}" font-size="24">▼</text>
+          <text class="kpiLabel" x="{{ x + 28 }}" y="{{ y + 52 }}">{{ n["label"] }}</text>
+
+          <text class="kpiVal {{ n.get('trend','neutral') }}" x="{{ x + 28 }}" y="{{ y + 108 }}">
+            {{ n["value"] }}{{ n.get("unit","") }}
+          </text>
+
+          {% if n.get("trend","") == "up" %}
+            <text x="{{ x + cardW - 60 }}" y="{{ y + 108 }}" font-size="24">▲</text>
+          {% elif n.get("trend","") == "down" %}
+            <text x="{{ x + cardW - 60 }}" y="{{ y + 108 }}" font-size="24">▼</text>
           {% endif %}
-          {% if n.note %}
-            <text class="kpiNote" x="{{ x + 28 }}" y="{{ y + 144 }}">{{ n.note }}</text>
+
+          {% if n.get("note","") %}
+            <text class="kpiNote" x="{{ x + 28 }}" y="{{ y + 144 }}">{{ n["note"] }}</text>
           {% endif %}
         </g>
       {% endfor %}
@@ -88,7 +93,7 @@
   <g id="donut_chart" transform="translate({{ M }}, {{ gridY + (cardH*2) + 10 }})">
     <text class="kpiLabel" x="0" y="0">구성 비율</text>
 
-    {% set total = chart["items"][0]["value"] + chart["items"][1]["value"] %}
+    {% set total = (chart["items"][0]["value"] | default(0)) + (chart["items"][1]["value"] | default(0)) %}
     {% set ratio = (chart["items"][0]["value"] / total) if total > 0 else 0 %}
 
     <circle cx="240" cy="100" r="70" stroke="#EEE" stroke-width="20" fill="none"/>
@@ -129,7 +134,14 @@
   {% endif %}
 
   {# --- Key Points (2개만 노출) --- #}
-  {% set kpY = gridY + (cardH*2) + gap + 180 %}
+  {% set baseY = gridY + (cardH*2) + gap %}
+  {% if chart and chart["type"] == "donut" %}
+    {% set kpY = baseY + 150 %}
+  {% elif chart and chart["type"] == "bar" and (chart["items"]|length) >= 2 %}
+    {% set kpY = baseY + 250 %}
+  {% else %}
+    {% set kpY = baseY + 120 %}
+  {% endif %}
   {% set kpX = M %}
   {% set kpW = W - (M*2) %}
 
