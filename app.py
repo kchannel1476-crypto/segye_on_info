@@ -23,6 +23,15 @@ def xml_escape(s: str) -> str:
     return s
 
 
+def sanitize_svg_for_png(svg: str) -> str:
+    if not svg:
+        return ""
+    svg = svg.replace("\ufeff", "")
+    svg = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", svg)
+    svg = re.sub(r"^\s*<\?xml[^>]*\?>\s*", "", svg)
+    return svg
+
+
 def get_openai_client():
     key = None
     try:
@@ -224,7 +233,7 @@ def analyze_for_desk(article_text: str, title_hint: str = "", url: str = "") -> 
         raise RuntimeError(f"desk analysis failed: {e}") from e
 
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from extractor import extract_article, has_numbers, extract_numbers_with_context
 
 DESK_KEY = "원하는_긴_비밀번호"
@@ -344,7 +353,10 @@ st.set_page_config(page_title="SEGYE.ON Infographic", layout="wide")
 # -----------------------------
 # Jinja2 환경
 # -----------------------------
-env = Environment(loader=FileSystemLoader("templates"), autoescape=False)
+env = Environment(
+    loader=FileSystemLoader("templates"),
+    autoescape=select_autoescape(enabled_extensions=("svg", "j2", "xml")),
+)
 _tpl = {
     "story_lite": env.get_template("story_lite.svg.j2"),
     "data_focus": env.get_template("data_focus.svg.j2"),
@@ -730,10 +742,20 @@ def run_desk_mode():
 
             try:
                 import cairosvg
-                png_bytes = cairosvg.svg2png(bytestring=st.session_state.svg.encode("utf-8"))
-                st.download_button("PNG 다운로드", png_bytes, "segye_infographic.png", "image/png")
+                safe_svg = sanitize_svg_for_png(st.session_state.svg)
+                png_bytes = cairosvg.svg2png(bytestring=safe_svg.encode("utf-8"))
+                st.download_button(
+                    label="PNG 다운로드",
+                    data=png_bytes,
+                    file_name="segye_infographic.png",
+                    mime="image/png"
+                )
             except Exception as e:
                 st.warning(f"PNG 변환 실패: {e}")
+                lines = (st.session_state.svg or "").splitlines()
+                if len(lines) >= 6:
+                    st.caption("디버그: SVG 상단 8줄")
+                    st.code("\n".join(lines[:8]))
         else:
             st.info("좌측에서 URL 불러오기 → AI 초안/데스크 분석 → 생성(렌더) 순으로 진행하세요.")
 
@@ -959,7 +981,8 @@ def run_public_mode():
 
             try:
                 import cairosvg
-                png_bytes = cairosvg.svg2png(bytestring=st.session_state.svg.encode("utf-8"))
+                safe_svg = sanitize_svg_for_png(st.session_state.svg)
+                png_bytes = cairosvg.svg2png(bytestring=safe_svg.encode("utf-8"))
                 st.download_button(
                     label="PNG 다운로드",
                     data=png_bytes,
@@ -968,6 +991,10 @@ def run_public_mode():
                 )
             except Exception as e:
                 st.warning(f"PNG 변환 실패: {e}")
+                lines = (st.session_state.svg or "").splitlines()
+                if len(lines) >= 6:
+                    st.caption("디버그: SVG 상단 8줄")
+                    st.code("\n".join(lines[:8]))
 
         else:
             st.info("좌측에서 입력/수정 후 '생성(렌더)'를 누르면 여기에서 결과를 확인할 수 있습니다.")
