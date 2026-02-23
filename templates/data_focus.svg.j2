@@ -76,7 +76,8 @@
         {% set y = row * (cardH + gap) %}
         <g class="kpi_card">
           <rect class="card" x="{{ x }}" y="{{ y }}" width="{{ cardW }}" height="{{ cardH }}" />
-          <text class="kpiLabel" x="{{ x + 28 }}" y="{{ y + 52 }}">{{ n["label"] }}</text>
+          {% set fallback = "비율" if "%" in n.unit else ("인원" if n.unit=="명" else ("기간" if n.unit in ["년","개월","일"] else ("금액" if n.unit in ["조","억","만","원"] else "수치"))) %}
+<text class="kpiLabel" x="{{ x + 28 }}" y="{{ y + 52 }}">{{ n.label if n.label else fallback }}</text>
 
           <text class="kpiVal {{ n.get('trend','neutral') }}" x="{{ x + 28 }}" y="{{ y + 108 }}">
             {{ n["value"] }}{{ n.get("unit","") }}
