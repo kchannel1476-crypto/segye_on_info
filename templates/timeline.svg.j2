@@ -1,6 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="{{ canvas.w }}" height="{{ canvas.h }}" viewBox="0 0 {{ canvas.w }} {{ canvas.h }}">
   <defs>
     <style type="text/css"><![CDATA[
+      {% if font_regular_b64 %}@font-face { font-family: 'NotoKR'; src: url("data:font/ttf;base64,{{ font_regular_b64 }}") format('truetype'); font-weight: 400; }
+      {% else %}@font-face { font-family: 'NotoKR'; src: url("fonts/NotoSansKR-Regular.ttf") format('truetype'); font-weight: 400; }
+      {% endif %}{% if font_bold_b64 %}@font-face { font-family: 'NotoKR'; src: url("data:font/ttf;base64,{{ font_bold_b64 }}") format('truetype'); font-weight: 700; }
+      {% else %}@font-face { font-family: 'NotoKR'; src: url("fonts/NotoSansKR-Bold.ttf") format('truetype'); font-weight: 700; }
+      {% endif %}text { font-family: 'NotoKR', sans-serif; }
       .bg { fill: #ffffff; }
       .ink { fill: #111111; }
       .muted { fill: #666666; }

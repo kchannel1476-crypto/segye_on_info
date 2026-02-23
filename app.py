@@ -379,11 +379,26 @@ _tpl = {
 }
 
 
+def _load_font_base64():
+    """regular.txt, bold.txt가 있으면 base64 문자열 반환 (SVG data URI 임베드용)."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    out = {}
+    for key, filename in (("font_regular_b64", "regular.txt"), ("font_bold_b64", "bold.txt")):
+        path = os.path.join(base_dir, filename)
+        if os.path.isfile(path):
+            try:
+                with open(path, "r", encoding="ascii") as f:
+                    out[key] = f.read().strip()
+            except Exception:
+                pass
+    return out
+
+
 def render_svg(template_key: str, render_model: dict) -> str:
     tpl = _tpl.get(template_key) or _tpl["story_lite"]
-    # chart 기본값 보장
     chart = render_model.get("chart") if isinstance(render_model, dict) else None
     rm = {**render_model, "chart": chart}
+    rm.update(_load_font_base64())
     return tpl.render(**rm)
 
 def default_spec():
