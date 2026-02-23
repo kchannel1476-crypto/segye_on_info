@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 from jinja2 import Environment, FileSystemLoader
+from extractor import extract_article, has_numbers
 
 # (선택) SVG -> PNG 변환
 # pip install cairosvg
@@ -108,7 +109,32 @@ left, right = st.columns([0.44, 0.56], gap="large")
 with left:
     st.subheader("입력 · 확인 · 수정 · 생성")
 
-    url = st.text_input("기사 URL", value=st.session_state.spec["meta"]["source_url"])
+    colA, colB = st.columns([3, 1])
+    with colA:
+        url = st.text_input("기사 URL", value=st.session_state.spec["meta"]["source_url"] or st.session_state.get("url", ""))
+    with colB:
+        if st.button("URL 불러오기", use_container_width=True):
+            try:
+                data = extract_article(url)
+                st.session_state["url"] = data.url
+                st.session_state["title_raw"] = data.title
+                st.session_state["date"] = data.published
+                st.session_state["byline"] = data.byline
+                st.session_state["article_text"] = data.content
+                st.session_state["og_image"] = data.og_image
+                st.session_state["template_hint"] = "data_focus" if has_numbers(data.content) else "story_lite"
+
+                # spec에 반영해 폼에 바로 표시
+                st.session_state.spec["meta"]["source_url"] = data.url
+                st.session_state.spec["meta"]["title"] = data.title
+                st.session_state.spec["meta"]["date"] = data.published
+                st.session_state.spec["meta"]["byline"] = data.byline
+                if not st.session_state.spec["content"]["headline"]:
+                    st.session_state.spec["content"]["headline"] = data.title
+                st.success("기사 정보를 불러왔습니다. 필요한 부분만 수정 후 생성(렌더)하세요.")
+            except Exception as e:
+                st.error(f"URL 불러오기 실패: {e}")
+
     title = st.text_input("제목(원문)", value=st.session_state.spec["meta"]["title"])
     date = st.text_input("날짜", value=st.session_state.spec["meta"]["date"])
     byline = st.text_input("바이라인", value=st.session_state.spec["meta"]["byline"])
@@ -128,6 +154,16 @@ with left:
 
     st.write("인용(기사에 있을 때만)")
     q_text = st.text_area("인용문", value=st.session_state.spec["content"]["quote"]["text"], height=80)
+
+    _opts = ["story_lite", "data_focus", "timeline", "compare"]
+    default_tpl = st.session_state.get("template_hint", "story_lite")
+    template = st.radio(
+        "템플릿",
+        options=_opts,
+        index=_opts.index(default_tpl) if default_tpl in _opts else 0,
+        horizontal=True
+    )
+    st.session_state["template"] = template
 
     c1, c2 = st.columns(2)
     with c1:
