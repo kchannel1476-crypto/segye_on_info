@@ -224,6 +224,8 @@ def infer_kpi_labels_with_ai(
     }
 
     system = (
+        "IMPORTANT: Respond with JSON only. Output MUST be valid JSON. "
+        "중요: 출력은 반드시 JSON만. JSON 외의 문장/설명/코드블록 금지.\n\n"
         "너는 세계일보 인포그래픽 편집 데스크다. "
         "입력: 기사 제목/본문 일부 + 숫자리스트(numbers: value/unit/raw/context). "
         "출력: 각 숫자에 대해 '라벨(label)'을 만든다.\n\n"
@@ -313,6 +315,8 @@ def enrich_labels(title: str, article_summary: str, article_text: str, nums_in: 
     {nums_json}
 
     출력은 반드시 JSON만 반환하세요.
+    IMPORTANT: Respond with JSON only. Output MUST be valid JSON.
+    중요: 출력은 반드시 JSON만. JSON 외의 문장/설명/코드블록 금지.
 
     출력 형식(예시):
     {{
@@ -410,6 +414,8 @@ def refine_numbers_with_openai(
 숫자 목록:
 {numbers_json}
 
+IMPORTANT: Respond with JSON only. Output MUST be valid JSON. 중요: 출력은 반드시 JSON만. JSON 외의 문장/설명/코드블록 금지.
+
 각 숫자에 대해 label 필드를 생성해 JSON으로 반환하라.
 각 item에 대해 label(6단어 이하 KPI 라벨), value(숫자만), unit(단위), note(맥락 한 줄), drop(불명확 시 true)를 채워라.
 출력 형식: {{"items": [{{"label":"", "value":"", "unit":"", "note":"", "drop": false 또는 true}}, ...]}} 순서는 숫자 목록과 동일하게."""
@@ -467,6 +473,7 @@ def analyze_for_desk(article_text: str, title_hint: str = "", url: str = "") -> 
     )
 
     prompt = {
+        "_instruction": "IMPORTANT: Respond with JSON only. Output MUST be valid JSON. 중요: 출력은 반드시 JSON만. JSON 외의 문장/설명/코드블록 금지.",
         "task": "desk_analysis",
         "inputs": {"url": url, "title_hint": title_hint, "article_text": article_text},
         "output_spec": {
@@ -1044,6 +1051,8 @@ def generate_draft_with_openai(article_text: str, title_hint: str = "") -> dict:
     if not client:
         return fallback
     prompt = f"""다음 기사 내용을 인포그래픽 초안으로 요약하세요. 반드시 JSON만 출력.
+IMPORTANT: Respond with JSON only. Output MUST be valid JSON. 중요: 출력은 반드시 JSON만. JSON 외의 문장/설명/코드블록 금지.
+
 형식: {{"headline":"","dek":"","key_points":["","",""],"callout_title":"","callout_body":"","quote_text":""}}
 
 key_points 작성 기준: 기사에서 독자가 알아야 할 핵심 인사이트 3개 작성. 숫자와 의미 포함, 짧고 강하게, 뉴스 톤 유지.
