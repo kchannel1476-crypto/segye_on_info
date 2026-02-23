@@ -19,6 +19,9 @@
       .kpNumBg { fill: #111111; rx: 10; ry: 10; }
       .kpText { fill: #111111; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; }
       .src { fill: #666666; font-size: 18px; font-weight: 500; }
+      .up { fill: #C62828; }
+      .down { fill: #1565C0; }
+      .neutral { fill: #111111; }
     </style>
   </defs>
 
@@ -67,7 +70,12 @@
         <g class="kpi_card">
           <rect class="card" x="{{ x }}" y="{{ y }}" width="{{ cardW }}" height="{{ cardH }}" />
           <text class="kpiLabel" x="{{ x + 28 }}" y="{{ y + 52 }}">{{ n.label }}</text>
-          <text class="kpiVal" x="{{ x + 28 }}" y="{{ y + 108 }}">{{ n.value }}{{ n.unit }}</text>
+          <text class="kpiVal {{ n.trend }}" x="{{ x + 28 }}" y="{{ y + 108 }}">{{ n.value }}{{ n.unit }}</text>
+          {% if n.trend == "up" %}
+          <text x="{{ x + cardW - 60 }}" y="{{ y + 108 }}" font-size="24">▲</text>
+          {% elif n.trend == "down" %}
+          <text x="{{ x + cardW - 60 }}" y="{{ y + 108 }}" font-size="24">▼</text>
+          {% endif %}
           {% if n.note %}
             <text class="kpiNote" x="{{ x + 28 }}" y="{{ y + 144 }}">{{ n.note }}</text>
           {% endif %}
@@ -76,7 +84,24 @@
     {% endif %}
   </g>
 
-  {% if chart.items and chart.items|length >= 2 %}
+  {% if chart and chart["type"] == "donut" and (chart["items"]|length) == 2 %}
+  <g id="donut_chart" transform="translate({{ M }}, {{ gridY + (cardH*2) + 10 }})">
+    <text class="kpiLabel" x="0" y="0">구성 비율</text>
+
+    {% set total = chart["items"][0]["value"] + chart["items"][1]["value"] %}
+    {% set ratio = chart["items"][0]["value"] / total %}
+
+    <circle cx="240" cy="100" r="70" stroke="#EEE" stroke-width="20" fill="none"/>
+    <circle cx="240" cy="100" r="70"
+            stroke="#111" stroke-width="20"
+            stroke-dasharray="{{ (440 * ratio)|int }} 440"
+            transform="rotate(-90 240 100)"
+            fill="none"/>
+
+    <text class="kpiLabel" x="330" y="90">{{ chart.items[0].label }}</text>
+    <text class="kpiLabel" x="330" y="120">{{ chart.items[1].label }}</text>
+  </g>
+  {% elif chart and chart["items"] and (chart["items"]|length) >= 2 %}
   {% set chartY = gridY + (cardH*2) + gap + 10 %}
   {% set chartX = M %}
   {% set chartW = W - (M*2) %}
@@ -86,7 +111,7 @@
   <g id="auto_chart" transform="translate({{ chartX }}, {{ chartY }})">
     <text class="kpiLabel" x="0" y="0">수치 비교</text>
 
-    {% for item in chart.items[:4] %}
+    {% for item in chart["items"][:4] %}
       {% set yy = 28 + loop.index0 * (barH + barGap) %}
       <text class="kpiLabel" x="0" y="{{ yy + 18 }}">{{ item.label }}</text>
 

@@ -253,7 +253,10 @@ _tpl = {
 
 def render_svg(template_key: str, render_model: dict) -> str:
     tpl = _tpl.get(template_key) or _tpl["story_lite"]
-    return tpl.render(**render_model)
+    # chart 기본값 보장
+    chart = render_model.get("chart") if isinstance(render_model, dict) else None
+    rm = {**render_model, "chart": chart}
+    return tpl.render(**rm)
 
 def default_spec():
     return {
@@ -350,6 +353,7 @@ def build_render_model(spec: dict) -> dict:
         item["norm"] = item["value"] / chart_max if chart_max > 0 else 0
 
     chart_type = "donut" if len(chart_items) == 2 else "bar"
+    chart_obj = {"items": chart_items, "max": chart_max, "type": chart_type}
 
     return {
         "canvas": {"w": 1080, "h": 1080, "margin": 72},
@@ -378,11 +382,7 @@ def build_render_model(spec: dict) -> dict:
             "has_callout": bool(callout_title or callout_body)
         },
         "numbers": nums,
-        "chart": {
-            "items": chart_items,
-            "max": chart_max,
-            "type": chart_type,
-        },
+        "chart": chart_obj,
     }
 
 # -----------------------------
