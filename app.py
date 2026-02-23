@@ -844,7 +844,7 @@ def run_desk_mode():
             if not st.session_state.spec["content"]["headline"]:
                 st.session_state.spec["content"]["headline"] = (data.title or "").strip()
 
-            nums = extract_numbers_with_context(data.content, limit=12)
+            nums = extract_numbers_with_context(data.content, max_items=12)
             st.session_state.spec["content"]["numbers"] = nums
             st.session_state["template_hint"] = "data_focus" if len(nums) >= 2 else "story_lite"
 
@@ -866,7 +866,7 @@ def run_desk_mode():
             st.session_state.spec["content"]["callouts"][0]["body"] = draft.get("callout_body", "")
             st.session_state.spec["content"]["quote"]["text"] = draft.get("quote_text", "")
 
-            nums_raw = extract_numbers_with_context(article_text, limit=10)
+            nums_raw = extract_numbers_with_context(article_text, max_items=10)
             nums_refined = refine_numbers_with_openai(
                 nums_raw,
                 title_hint=st.session_state.spec["meta"].get("title", ""),
@@ -1068,7 +1068,7 @@ def run_public_mode():
                 if not st.session_state.spec["content"]["headline"]:
                     st.session_state.spec["content"]["headline"] = (data.title or "").strip()
 
-                nums = extract_numbers_with_context(data.content, limit=12)
+                nums = extract_numbers_with_context(data.content, max_items=12)
                 st.session_state.spec["content"]["numbers"] = nums
                 st.session_state["template_hint"] = "data_focus" if len(nums) >= 2 else "story_lite"
 
@@ -1090,7 +1090,7 @@ def run_public_mode():
             st.session_state.spec["content"]["callouts"][0]["title"] = "핵심 맥락"
             st.session_state.spec["content"]["callouts"][0]["body"] = make_simple_callout(article_text)
 
-            nums_raw = extract_numbers_with_context(article_text, limit=10)
+            nums_raw = extract_numbers_with_context(article_text, max_items=10)
             nums_refined = refine_numbers_with_openai(
                 nums_raw,
                 title_hint=st.session_state.spec["meta"].get("title", ""),

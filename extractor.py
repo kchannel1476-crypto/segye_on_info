@@ -101,56 +101,37 @@ def extract_article(url: str) -> ArticleExtract:
 _NUM_RE = re.compile(r"(?<!\w)(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:%|조|억|만|원|명|건|배|년|월|일)?(?!\w)")
 
 
-def _split_sentences_ko(text: str) -> List[str]:
+def _split_sentences_ko(text: str):
     text = (text or "").strip()
-    if not text:
-        return []
     text = re.sub(r"\s+", " ", text)
-    sents = re.split(r"(?<=[\.\?\!]|다|요|함|됨)\s+", text)
-    sents = [s.strip() for s in sents if s and s.strip()]
-    return sents
+    return re.split(r"(?<=[\.\?\!]|다|요|함|됨)\s+", text)
 
 
-def _normalize_number(value_str: str) -> float:
-    v = (value_str or "").replace(",", "").strip()
-    return float(v)
+def _normalize_number(value_str: str):
+    return float(value_str.replace(",", ""))
 
 
-def extract_numbers_with_context(
-    text: str, limit: int = 12, context_chars: int = 40
-) -> List[Dict[str, Any]]:
+def extract_numbers_with_context(text: str, max_items: int = 12) -> List[Dict[str, Any]]:
     """
-    반환 예:
-    [
-      {"value": 35, "unit": "%", "raw": "35%", "context": "…", "label": "", "note": "", "trend": "neutral"},
-      ...
-    ]
+    그룹 이름 충돌 없는 안전 버전
     """
-    sents = _split_sentences_ko(text)
-    if not sents:
-        return []
+    sentences = _split_sentences_ko(text)
 
-    patterns = [
-        r"(?P<num>\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?P<unit>%p|%|명|건|개|년|개월|일|시간|배|p)\b",
-        r"(?P<num>\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?P<unit>조|억|만)\s*(?P<tail>원)?",
-        r"(?P<num>\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(?P<unit>원)\b",
-    ]
-    rx = re.compile("|".join(f"({p})" for p in patterns))
+    pattern = re.compile(
+        r"(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(%p|%|명|건|개|년|개월|일|시간|배|p|조|억|만|원)"
+    )
 
-    found = []
+    results = []
     seen = set()
 
-    for sent in sents:
-        for m in rx.finditer(sent):
-            gd = {k: v for k, v in (m.groupdict() or {}).items() if v}
-            num_str = gd.get("num")
-            unit = gd.get("unit") or ""
-            tail = gd.get("tail") or ""
-            if not num_str:
-                continue
+    for sent in sentences:
+        for m in pattern.finditer(sent):
 
-            raw = (m.group(0) or "").strip()
-            key = (num_str, unit, raw)
+            num_str = m.group(1)
+            unit = m.group(2)
+            raw = m.group(0)
+
+            key = (num_str, unit)
             if key in seen:
                 continue
             seen.add(key)
@@ -160,11 +141,9 @@ def extract_numbers_with_context(
             except Exception:
                 continue
 
-            norm_unit = unit + (tail if tail else "")
-
-            found.append({
-                "value": int(val) if float(val).is_integer() else float(val),
-                "unit": norm_unit,
+            results.append({
+                "value": int(val) if val.is_integer() else val,
+                "unit": unit,
                 "raw": raw,
                 "context": sent[:180],
                 "label": "",
@@ -172,12 +151,13 @@ def extract_numbers_with_context(
                 "trend": "neutral",
             })
 
-            if len(found) >= limit:
+            if len(results) >= max_items:
                 break
-        if len(found) >= limit:
+
+        if len(results) >= max_items:
             break
 
-    return found
+    return results
 
 
 def has_numbers(text: str) -> bool:
