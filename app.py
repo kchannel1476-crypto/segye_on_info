@@ -438,10 +438,11 @@ def refine_numbers_with_openai(
         if it.get("drop") is True:
             continue
         out.append({
-            "label": (it.get("label") or "").strip(),
-            "value": (it.get("value") or "").strip(),
-            "unit": (it.get("unit") or "").strip(),
-            "note": (it.get("note") or "").strip(),
+            "value": str(it.get("value") or "").strip(),
+            "unit": str(it.get("unit") or "").strip(),
+            "label": str(it.get("label") or "").strip(),
+            "note": str(it.get("note") or "").strip(),
+            "trend": classify_trend(str(it.get("value") or "")),
         })
 
     return out[:6]
