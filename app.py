@@ -17,6 +17,71 @@ def get_openai_client():
         return None
     from openai import OpenAI
     return OpenAI(api_key=key)
+
+
+def refine_numbers_with_openai(numbers: list[dict], title_hint: str = "") -> list[dict]:
+    """
+    input: [{"label": "...", "value": "3.5%", "context": "..."}...]
+    output: [{"label": "기준금리", "value": "3.50", "unit": "%", "note": "…"} ...]
+    """
+    client = get_openai_client()
+    if client is None:
+        return numbers
+
+    if not numbers:
+        return []
+
+    nums_in = numbers[:8]
+
+    system = (
+        "너는 신문사 인포그래픽 편집 데스크다. "
+        "숫자 후보를 보고 '무슨 수치인지' 라벨과 단위를 정확히 정리한다. "
+        "기사에 근거 없는 해석/추측은 하지 않는다."
+    )
+
+    user_payload = {
+        "title_hint": title_hint,
+        "items": nums_in,
+        "instruction": (
+            "각 item에 대해 아래 필드를 채워라.\n"
+            "- label: 독자용 짧은 라벨(2~8자)\n"
+            "- value: 숫자만(쉼표 제거, 소수 유지 가능)\n"
+            "- unit: 단위(%/원/명/건/배/년/월/일/조/억/만 등 없으면 빈 문자열)\n"
+            "- note: 맥락 한 줄(20~45자), 원문 문맥 기반\n"
+            "의미가 불명확하거나 순번/날짜/페이지 등으로 보이면 drop=true로 표시해 제외해라.\n"
+            "출력은 반드시 JSON 하나만. 형식: {\"items\": [{\"label\":\"\", \"value\":\"\", \"unit\":\"\", \"note\":\"\", \"drop\": false 또는 true}, ...]}"
+        ),
+    }
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        raw = resp.choices[0].message.content or ""
+        data = json.loads(raw)
+    except Exception:
+        return numbers
+
+    out = []
+    for it in data.get("items", []):
+        if it.get("drop") is True:
+            continue
+        out.append({
+            "label": (it.get("label") or "").strip(),
+            "value": (it.get("value") or "").strip(),
+            "unit": (it.get("unit") or "").strip(),
+            "note": (it.get("note") or "").strip(),
+        })
+
+    return out[:6]
+
+
 from jinja2 import Environment, FileSystemLoader
 from extractor import extract_article, has_numbers, extract_numbers_with_context
 
@@ -279,15 +344,20 @@ with left:
         st.session_state.spec["content"]["callouts"][0]["title"] = "핵심 맥락"
         st.session_state.spec["content"]["callouts"][0]["body"] = make_simple_callout(article_text)
 
-        # 숫자+문맥 추출 후 spec.numbers 반영
-        nums = extract_numbers_with_context(article_text, limit=6)
-        st.session_state.spec["content"]["numbers"] = [
-            {"label": x.get("label", ""), "value": x.get("value", ""), "unit": "", "context": x.get("context", "")}
-            for x in nums
-        ]
+        # 1) 후보 추출(규칙 기반)
+        nums_raw = extract_numbers_with_context(article_text, limit=10)
 
-        # 숫자 개수로 템플릿 추천
-        st.session_state["template_hint"] = "data_focus" if len(st.session_state.spec["content"]["numbers"]) >= 2 else "story_lite"
+        # 2) LLM로 라벨/단위/노트 정제 + 불필요 숫자 제거
+        nums_refined = refine_numbers_with_openai(
+            nums_raw,
+            title_hint=st.session_state.spec["meta"].get("title", ""),
+        )
+
+        # 3) spec 반영
+        st.session_state.spec["content"]["numbers"] = nums_refined
+
+        # 4) 템플릿 힌트/자동 선택 강화
+        st.session_state["template_hint"] = "data_focus" if len(nums_refined) >= 2 else "story_lite"
 
         st.success("자동 초안이 생성되었습니다. 필요하면 아래에서 일부만 수정 후 '생성(렌더)'를 눌러주세요.")
 

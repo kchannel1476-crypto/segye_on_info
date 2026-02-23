@@ -59,12 +59,17 @@
   <!-- Numbers (auto) -->
   <g id="numbers">
     {% for n in numbers[:3] %}
-    <text x="72" y="{{ 820 + loop.index0*70 }}" font-size="34" font-weight="700">
-      {{ n.value }}
+    <text x="72" y="{{ 820 + loop.index0*72 }}" font-size="34" font-weight="700">
+      {{ n.value }}{{ n.unit }}
     </text>
-    <text x="260" y="{{ 820 + loop.index0*70 }}" font-size="22" opacity="0.85">
+    <text x="300" y="{{ 820 + loop.index0*72 }}" font-size="22" opacity="0.85">
       {{ n.label }}
     </text>
+    {% if n.note %}
+    <text x="72" y="{{ 850 + loop.index0*72 }}" font-size="18" opacity="0.72">
+      {{ n.note }}
+    </text>
+    {% endif %}
     {% endfor %}
   </g>
   {% endif %}
