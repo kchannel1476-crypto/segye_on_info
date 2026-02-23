@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 import time
 import re
+import logging
 import streamlit as st
 import json
 
@@ -250,7 +251,9 @@ def infer_kpi_labels_with_ai(
         )
         content = resp.choices[0].message.content
         data = _safe_json_loads(content or "")
-        if not data or "kpis" not in data:
+        if not data or not isinstance(data, dict) or len(data) == 0:
+            raise RuntimeError("AI returned empty result (check prompt/parse/model/response)")
+        if "kpis" not in data:
             return None
 
         kpis = data["kpis"]
@@ -275,6 +278,8 @@ def infer_kpi_labels_with_ai(
 
         return merged
 
+    except RuntimeError:
+        raise
     except Exception as e:
         st.warning(f"AI 라벨 생성 실패: {e}")
         return None
@@ -314,7 +319,12 @@ def enrich_labels(title: str, summary: str, text: str, numbers: list[dict]) -> d
             response_format={"type": "json_object"},
         )
         raw = res.choices[0].message.content or "{}"
-        return json.loads(raw)
+        result = json.loads(raw)
+        if not result or not isinstance(result, dict) or len(result) == 0:
+            raise RuntimeError("AI returned empty result (check prompt/parse/model/response)")
+        return result
+    except RuntimeError:
+        raise
     except Exception:
         return {}
 
@@ -395,6 +405,10 @@ def refine_numbers_with_openai(
         )
         raw = resp.choices[0].message.content or ""
         data = json.loads(raw)
+        if not data or not isinstance(data, dict) or len(data) == 0:
+            raise RuntimeError("AI returned empty result (check prompt/parse/model/response)")
+    except RuntimeError:
+        raise
     except Exception:
         return numbers
 
@@ -463,7 +477,12 @@ def analyze_for_desk(article_text: str, title_hint: str = "", url: str = "") -> 
             response_format={"type": "json_object"},
         )
         raw = resp.choices[0].message.content or ""
-        return json.loads(raw)
+        result = json.loads(raw)
+        if not result or not isinstance(result, dict) or len(result) == 0:
+            raise RuntimeError("AI returned empty result (check prompt/parse/model/response)")
+        return result
+    except RuntimeError:
+        raise
     except Exception as e:
         raise RuntimeError(f"desk analysis failed: {e}") from e
 
@@ -1019,6 +1038,8 @@ key_points 작성 기준: 기사에서 독자가 알아야 할 핵심 인사이�
         )
         raw = resp.choices[0].message.content or "{}"
         data = json.loads(raw)
+        if not data or not isinstance(data, dict) or len(data) == 0:
+            raise RuntimeError("AI returned empty result (check prompt/parse/model/response)")
         return {
             "headline": (data.get("headline") or fallback["headline"]).strip(),
             "dek": (data.get("dek") or "").strip(),
@@ -1027,6 +1048,8 @@ key_points 작성 기준: 기사에서 독자가 알아야 할 핵심 인사이�
             "callout_body": (data.get("callout_body") or fallback["callout_body"]).strip(),
             "quote_text": (data.get("quote_text") or "").strip(),
         }
+    except RuntimeError:
+        raise
     except Exception:
         return fallback
 
@@ -1153,33 +1176,44 @@ def run_desk_mode():
             if not numbers_all:
                 st.info("추출된 수치가 없습니다. 먼저 URL 불러오기를 해주세요.")
             else:
-                # ✅ 후보 전체를 대상으로 라벨 생성(정확도 ↑)
-                labeled_all = infer_kpi_labels_with_ai(
-                    title=title,
-                    article_text=article_text,
-                    numbers=numbers_all,
-                    publisher=st.session_state.spec["meta"].get("publisher", "세계일보"),
-                )
+                try:
+                    # ✅ 후보 전체를 대상으로 라벨 생성(정확도 ↑)
+                    logging.getLogger("segye").warning("OPENAI_KEY_CONFIGURED=%s", is_openai_api_key_configured())
+                    logging.getLogger("segye").warning(
+                        "AI_INPUT lens: article_text=%s, numbers_all=%s, numbers=%s",
+                        len((st.session_state.get("article_text") or "")),
+                        len((st.session_state.spec["content"].get("numbers_all") or [])),
+                        len((st.session_state.spec["content"].get("numbers") or [])),
+                    )
+                    labeled_all = infer_kpi_labels_with_ai(
+                        title=title,
+                        article_text=article_text,
+                        numbers=numbers_all,
+                        publisher=st.session_state.spec["meta"].get("publisher", "세계일보"),
+                    )
 
-                if labeled_all:
-                    # 1) numbers_all 갱신
-                    st.session_state.spec["content"]["numbers_all"] = labeled_all
+                    if labeled_all:
+                        # 1) numbers_all 갱신
+                        st.session_state.spec["content"]["numbers_all"] = labeled_all
 
-                    # 2) numbers(선택 4개)에도 라벨 반영
-                    #    동일 값/단위 기반으로 매칭 (추출 안정성 최고)
-                    def key(n):
-                        return (str(n.get("value")), n.get("unit", ""))
+                        # 2) numbers(선택 4개)에도 라벨 반영
+                        #    동일 값/단위 기반으로 매칭 (추출 안정성 최고)
+                        def key(n):
+                            return (str(n.get("value")), n.get("unit", ""))
 
-                    map_all = {key(n): n for n in labeled_all}
-                    new_sel = []
-                    for n in numbers_sel:
-                        new_sel.append(map_all.get(key(n), n))
-                    st.session_state.spec["content"]["numbers"] = new_sel
+                        map_all = {key(n): n for n in labeled_all}
+                        new_sel = []
+                        for n in numbers_sel:
+                            new_sel.append(map_all.get(key(n), n))
+                        st.session_state.spec["content"]["numbers"] = new_sel
 
-                    st.success("AI 라벨을 채웠습니다. 생성(렌더)하면 차트 라벨에도 자동 반영됩니다.")
-                    st.session_state.dirty = True
-                else:
-                    st.info("AI 라벨 생성이 실패했거나 결과가 비어 있습니다. (API 키/본문/추출값 확인)")
+                        st.success("AI 라벨을 채웠습니다. 생성(렌더)하면 차트 라벨에도 자동 반영됩니다.")
+                        st.session_state.dirty = True
+                    else:
+                        st.info("AI 라벨 생성이 실패했거나 결과가 비어 있습니다. (API 키/본문/추출값 확인)")
+                except Exception:
+                    logging.getLogger("segye").exception("AI_LABEL_GEN_FAILED")
+                    st.error("AI 라벨 생성 실패: 로그를 확인해주세요.")
 
         st.divider()
 
@@ -1418,33 +1452,44 @@ def run_public_mode():
             if not numbers_all:
                 st.info("추출된 수치가 없습니다. 먼저 URL 불러오기를 해주세요.")
             else:
-                # ✅ 후보 전체를 대상으로 라벨 생성(정확도 ↑)
-                labeled_all = infer_kpi_labels_with_ai(
-                    title=title,
-                    article_text=article_text,
-                    numbers=numbers_all,
-                    publisher=st.session_state.spec["meta"].get("publisher", "세계일보"),
-                )
+                try:
+                    # ✅ 후보 전체를 대상으로 라벨 생성(정확도 ↑)
+                    logging.getLogger("segye").warning("OPENAI_KEY_CONFIGURED=%s", is_openai_api_key_configured())
+                    logging.getLogger("segye").warning(
+                        "AI_INPUT lens: article_text=%s, numbers_all=%s, numbers=%s",
+                        len((st.session_state.get("article_text") or "")),
+                        len((st.session_state.spec["content"].get("numbers_all") or [])),
+                        len((st.session_state.spec["content"].get("numbers") or [])),
+                    )
+                    labeled_all = infer_kpi_labels_with_ai(
+                        title=title,
+                        article_text=article_text,
+                        numbers=numbers_all,
+                        publisher=st.session_state.spec["meta"].get("publisher", "세계일보"),
+                    )
 
-                if labeled_all:
-                    # 1) numbers_all 갱신
-                    st.session_state.spec["content"]["numbers_all"] = labeled_all
+                    if labeled_all:
+                        # 1) numbers_all 갱신
+                        st.session_state.spec["content"]["numbers_all"] = labeled_all
 
-                    # 2) numbers(선택 4개)에도 라벨 반영
-                    #    동일 값/단위 기반으로 매칭 (추출 안정성 최고)
-                    def key(n):
-                        return (str(n.get("value")), n.get("unit", ""))
+                        # 2) numbers(선택 4개)에도 라벨 반영
+                        #    동일 값/단위 기반으로 매칭 (추출 안정성 최고)
+                        def key(n):
+                            return (str(n.get("value")), n.get("unit", ""))
 
-                    map_all = {key(n): n for n in labeled_all}
-                    new_sel = []
-                    for n in numbers_sel:
-                        new_sel.append(map_all.get(key(n), n))
-                    st.session_state.spec["content"]["numbers"] = new_sel
+                        map_all = {key(n): n for n in labeled_all}
+                        new_sel = []
+                        for n in numbers_sel:
+                            new_sel.append(map_all.get(key(n), n))
+                        st.session_state.spec["content"]["numbers"] = new_sel
 
-                    st.success("AI 라벨을 채웠습니다. 생성(렌더)하면 차트 라벨에도 자동 반영됩니다.")
-                    st.session_state.dirty = True
-                else:
-                    st.info("AI 라벨 생성이 실패했거나 결과가 비어 있습니다. (API 키/본문/추출값 확인)")
+                        st.success("AI 라벨을 채웠습니다. 생성(렌더)하면 차트 라벨에도 자동 반영됩니다.")
+                        st.session_state.dirty = True
+                    else:
+                        st.info("AI 라벨 생성이 실패했거나 결과가 비어 있습니다. (API 키/본문/추출값 확인)")
+                except Exception:
+                    logging.getLogger("segye").exception("AI_LABEL_GEN_FAILED")
+                    st.error("AI 라벨 생성 실패: 로그를 확인해주세요.")
 
         with st.expander("수정(선택) — 헤드라인/키포인트만 다듬기", expanded=False):
             title = st.text_input("제목(원문)", value=st.session_state.spec["meta"]["title"])
