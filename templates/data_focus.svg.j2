@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ canvas.w }}" height="{{ canvas.h }}" viewBox="0 0 {{ canvas.w }} {{ canvas.h }}">
+  <defs>
+    <style type="text/css"><![CDATA[
+      .bg { fill: #ffffff; }
+      .ink { fill: #111111; }
+      .muted { fill: #666666; }
+      .hair { stroke: #dddddd; stroke-width: 2; }
+      .h1 { font-family: "Noto Serif KR", "AppleMyungjo", serif; font-size: 56px; font-weight: 700; }
+      .dek { font-family: "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; font-size: 28px; font-weight: 400; }
+      .bp { font-family: "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; font-size: 34px; font-weight: 600; }
+      .body { font-family: "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; font-size: 30px; font-weight: 400; }
+      .small { font-family: "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; font-size: 22px; font-weight: 400; }
+    ]]></style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="{{ canvas.w }}" height="{{ canvas.h }}"/>
+
+  {% set m = canvas.margin %}
+  {% set x0 = m %}
+  {% set x1 = canvas.w - m %}
+  {% set y = m %}
+
+  <!-- Header -->
+  <text class="h1 ink" x="{{ x0 }}" y="{{ y + 72 }}">{{ text.headline }}</text>
+  {% if text.dek %}
+    <text class="dek muted" x="{{ x0 }}" y="{{ y + 120 }}">{{ text.dek }}</text>
+  {% endif %}
+
+  <line class="hair" x1="{{ x0 }}" y1="{{ y + 160 }}" x2="{{ x1 }}" y2="{{ y + 160 }}"/>
+
+  <!-- Key points -->
+  {% set kp_y = y + 230 %}
+  <text class="bp ink" x="{{ x0 }}" y="{{ kp_y }}">핵심</text>
+  {% for i in range(3) %}
+    {% set yy = kp_y + 70 + (i * 90) %}
+    <circle cx="{{ x0 + 12 }}" cy="{{ yy - 10 }}" r="6" fill="#111111"/>
+    <text class="body ink" x="{{ x0 + 36 }}" y="{{ yy }}">{{ text.key_points[i] }}</text>
+  {% endfor %}
+
+  <!-- Quote (optional) -->
+  {% set q_y = kp_y + 70 + (3 * 90) + 60 %}
+  {% if flags.has_quote and text.quote_line %}
+    <line class="hair" x1="{{ x0 }}" y1="{{ q_y - 30 }}" x2="{{ x1 }}" y2="{{ q_y - 30 }}"/>
+    <text class="bp ink" x="{{ x0 }}" y="{{ q_y }}">인용</text>
+    <text class="body ink" x="{{ x0 }}" y="{{ q_y + 62 }}">"{{ text.quote_line }}"</text>
+    {% set c_top = q_y + 140 %}
+  {% else %}
+    {% set c_top = q_y - 10 %}
+  {% endif %}
+
+  <!-- Callout -->
+  {% if flags.has_callout and (text.callout_title or text.callout_body) %}
+    <rect x="{{ x0 }}" y="{{ c_top }}" width="{{ x1 - x0 }}" height="220" fill="#f6f6f6" rx="18" />
+    <text class="bp ink" x="{{ x0 + 28 }}" y="{{ c_top + 68 }}">{{ text.callout_title }}</text>
+    <text class="body muted" x="{{ x0 + 28 }}" y="{{ c_top + 130 }}">{{ text.callout_body }}</text>
+  {% endif %}
+
+  <!-- Footer -->
+  <line class="hair" x1="{{ x0 }}" y1="{{ canvas.h - m - 90 }}" x2="{{ x1 }}" y2="{{ canvas.h - m - 90 }}"/>
+  <text class="small muted" x="{{ x0 }}" y="{{ canvas.h - m - 45 }}">{{ text.sources_line }}</text>
+</svg>
