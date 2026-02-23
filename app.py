@@ -526,14 +526,31 @@ def make_simple_keypoints(text: str, k: int = 3) -> list[str]:
     return picked
 
 
-def classify_trend(value_str: str):
-    s = value_str.strip()
-    if s.startswith("+"):
-        return "up"
-    if s.startswith("-"):
-        return "down"
-    if "%" in s:
+def classify_trend(value_any) -> str:
+    """
+    value_any: str | int | float | None
+    반환: "up" | "down" | "neutral"
+    규칙:
+      - 텍스트에 '증가/상승/늘' 또는 ▲ / + 포함 → up
+      - 텍스트에 '감소/하락/줄' 또는 ▼ / - 포함 → down
+      - 숫자만 있으면 방향 판단 불가 → neutral
+    """
+    if value_any is None:
         return "neutral"
+
+    # 숫자면 방향 판단 불가(문맥이 없으니)
+    if isinstance(value_any, (int, float)):
+        return "neutral"
+
+    # 그 외는 문자열로 처리
+    s = str(value_any).strip()
+
+    # 기호 기반
+    if "▲" in s or "상승" in s or "증가" in s or "늘" in s or re.search(r"\+\s*\d", s):
+        return "up"
+    if "▼" in s or "하락" in s or "감소" in s or "줄" in s or re.search(r"-\s*\d", s):
+        return "down"
+
     return "neutral"
 
 
@@ -666,7 +683,7 @@ def build_render_model(spec: dict) -> dict:
     for n in nums:
         if not n.get("label"):
             n["label"] = "핵심 지표"
-        n["trend"] = classify_trend(n.get("value", ""))
+        n["trend"] = classify_trend(n.get("raw") or n.get("context") or "")
     numbers = nums[:2]
     big1 = xml_escape(str(numbers[0].get("value", "")) if numbers else "")
     big1_label = xml_escape((numbers[0].get("label", "") or numbers[0].get("context", "") or "").strip() if numbers else "")
