@@ -265,8 +265,7 @@ def _kpi_bucket(unit: str) -> str:
     return "other"
 
 
-def _kpi_score(n: Dict[str, Any]) -> float:
-    # postprocess_numbers에서 쓰던 score를 여기서도 재사용할 수 있게 단독으로 둠
+def _kpi_score(n: dict) -> float:
     unit = n.get("unit", "")
     ctx = n.get("context", "") or ""
     s = 0.0
@@ -279,9 +278,8 @@ def _kpi_score(n: Dict[str, Any]) -> float:
     if unit in ("년", "개월", "일", "시간"):
         s += 20
 
-    s += min(len(ctx), 180) / 60.0  # 0~3점 정도
+    s += min(len(ctx), 180) / 60.0
 
-    # 너무 작은 수 감점(단, %는 제외)
     try:
         v = float(n.get("value"))
         if v <= 2 and ("%" not in unit):
@@ -289,25 +287,16 @@ def _kpi_score(n: Dict[str, Any]) -> float:
     except Exception:
         pass
 
-    # label이 이미 있으면 조금 가산(추후 AI 라벨 이후 재정렬에도 유용)
     if (n.get("label") or "").strip():
         s += 5
 
     return s
 
 
-def choose_kpis(nums: List[Dict[str, Any]], k: int = 4) -> List[Dict[str, Any]]:
-    """
-    nums 후보들 중 '구성 좋은 k개'를 선택:
-    - ratio(%) 1~2
-    - count(명/건/개) 1
-    - money/time는 있으면 1개씩 우선
-    - 나머지는 점수 상위로 채움
-    """
+def choose_kpis(nums: list, k: int = 4) -> list:
     if not nums:
         return []
 
-    # 1) 점수 계산 + 정렬
     candidates = []
     for n in nums:
         nn = dict(n)
@@ -315,7 +304,6 @@ def choose_kpis(nums: List[Dict[str, Any]], k: int = 4) -> List[Dict[str, Any]]:
         candidates.append(nn)
     candidates.sort(key=lambda x: x["_score"], reverse=True)
 
-    # 2) 버킷별로 분리(점수순 유지)
     buckets = {"ratio": [], "count": [], "money": [], "time": [], "other": []}
     for n in candidates:
         buckets[_kpi_bucket(n.get("unit", ""))].append(n)
@@ -327,7 +315,6 @@ def choose_kpis(nums: List[Dict[str, Any]], k: int = 4) -> List[Dict[str, Any]]:
         for n in buckets[bucket_name]:
             if len(picked) >= k:
                 return
-            # 같은 값/단위 과도 중복 방지
             key = (str(n.get("value")), n.get("unit", ""))
             if any((str(p.get("value")), p.get("unit", "")) == key for p in picked):
                 continue
@@ -335,22 +322,14 @@ def choose_kpis(nums: List[Dict[str, Any]], k: int = 4) -> List[Dict[str, Any]]:
             if sum(1 for p in picked if _kpi_bucket(p.get("unit","")) == bucket_name) >= limit:
                 return
 
-    # 3) 구성 규칙대로 담기
-    # ratio 1개는 무조건 우선(있다면)
     take("ratio", 1)
-
-    # count 1개 (있다면)
     take("count", 1)
-
-    # money/time는 있으면 1개씩
     take("money", 1)
     take("time", 1)
 
-    # ratio가 많으면 2개까지 허용(남는 자리 있을 때)
     if len(picked) < k:
         take("ratio", 2)
 
-    # 남는 자리는 전체 후보 점수순으로 채움
     if len(picked) < k:
         for n in candidates:
             if len(picked) >= k:
@@ -360,7 +339,6 @@ def choose_kpis(nums: List[Dict[str, Any]], k: int = 4) -> List[Dict[str, Any]]:
                 continue
             picked.append(n)
 
-    # _score 제거 후 반환
     for p in picked:
         p.pop("_score", None)
     return picked[:k]

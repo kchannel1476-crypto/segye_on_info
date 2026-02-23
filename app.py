@@ -870,7 +870,6 @@ def run_desk_mode():
 
             nums = extract_numbers_with_context(data.content, max_items=20)
             st.session_state.spec["content"]["numbers_all"] = nums or []
-            # ✅ 조합 선택 알고리즘으로 KPI 4개 구성
             st.session_state.spec["content"]["numbers"] = choose_kpis(nums or [], k=4)
             st.session_state["template_hint"] = "data_focus" if len(st.session_state.spec["content"]["numbers"]) >= 2 else "story_lite"
 
@@ -1096,7 +1095,6 @@ def run_public_mode():
 
                 nums = extract_numbers_with_context(data.content, max_items=20)
                 st.session_state.spec["content"]["numbers_all"] = nums or []
-                # ✅ 조합 선택 알고리즘으로 KPI 4개 구성
                 st.session_state.spec["content"]["numbers"] = choose_kpis(nums or [], k=4)
                 st.session_state["template_hint"] = "data_focus" if len(st.session_state.spec["content"]["numbers"]) >= 2 else "story_lite"
 
