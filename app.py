@@ -870,7 +870,7 @@ def run_desk_mode():
 
             nums = extract_numbers_with_context(data.content, max_items=20)
             st.session_state.spec["content"]["numbers_all"] = nums or []
-            st.session_state.spec["content"]["numbers"] = choose_kpis(nums or [], k=4)
+            st.session_state.spec["content"]["numbers"] = choose_kpis(nums or [], k=4, title=data.title)
             st.session_state["template_hint"] = "data_focus" if len(st.session_state.spec["content"]["numbers"]) >= 2 else "story_lite"
 
             st.success("기사 로드 완료")
@@ -1095,7 +1095,7 @@ def run_public_mode():
 
                 nums = extract_numbers_with_context(data.content, max_items=20)
                 st.session_state.spec["content"]["numbers_all"] = nums or []
-                st.session_state.spec["content"]["numbers"] = choose_kpis(nums or [], k=4)
+                st.session_state.spec["content"]["numbers"] = choose_kpis(nums or [], k=4, title=data.title)
                 st.session_state["template_hint"] = "data_focus" if len(st.session_state.spec["content"]["numbers"]) >= 2 else "story_lite"
 
                 st.success("기사 정보를 불러왔습니다. 다음으로 '자동 초안 생성'을 눌러주세요.")

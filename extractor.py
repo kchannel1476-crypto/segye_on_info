@@ -265,7 +265,7 @@ def _kpi_bucket(unit: str) -> str:
     return "other"
 
 
-def _kpi_score(n: dict) -> float:
+def _kpi_score(n: dict, title: str = "") -> float:
     unit = n.get("unit", "")
     ctx = n.get("context", "") or ""
     s = 0.0
@@ -280,6 +280,13 @@ def _kpi_score(n: dict) -> float:
 
     s += min(len(ctx), 180) / 60.0
 
+    # ✅ 제목 키워드(앞 12자) 근접 가중치
+    t = (title or "").strip()
+    if t:
+        key = t[:12]
+        if key and key in ctx:
+            s += 8
+
     try:
         v = float(n.get("value"))
         if v <= 2 and ("%" not in unit):
@@ -293,14 +300,14 @@ def _kpi_score(n: dict) -> float:
     return s
 
 
-def choose_kpis(nums: list, k: int = 4) -> list:
+def choose_kpis(nums: list, k: int = 4, title: str = "") -> list:
     if not nums:
         return []
 
     candidates = []
     for n in nums:
         nn = dict(n)
-        nn["_score"] = _kpi_score(nn)
+        nn["_score"] = _kpi_score(nn, title=title)
         candidates.append(nn)
     candidates.sort(key=lambda x: x["_score"], reverse=True)
 
