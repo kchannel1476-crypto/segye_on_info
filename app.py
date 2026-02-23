@@ -670,18 +670,31 @@ def _to_float_safe(x):
 
 
 def _num_display(n: dict) -> str:
-    """템플릿 우측 값 표시용(바 차트)"""
+    raw = (n.get("raw") or "").strip()
+    if raw:
+        return raw
     v = n.get("value")
     u = n.get("unit", "")
-    if isinstance(v, (int, float)):
-        # 정수면 .0 제거
-        if float(v).is_integer():
-            v = int(v)
+    if isinstance(v, (int, float)) and float(v).is_integer():
+        v = int(v)
     return f"{v}{u}".strip()
 
 
 def _is_ratio(n: dict) -> bool:
     return "%" in (n.get("unit", "") or "")
+
+
+def _fallback_label_from_context(n: dict) -> str:
+    u = n.get("unit", "")
+    if "%" in u:
+        return "비율"
+    if u in ("명", "건", "개"):
+        return "규모"
+    if u in ("원", "만", "억", "조") or ("원" in u):
+        return "금액"
+    if u in ("년", "개월", "일", "시간"):
+        return "기간"
+    return "수치"
 
 
 def _pick_ratio_pair(numbers_all: list) -> list:
@@ -734,13 +747,8 @@ def build_auto_chart(numbers_selected: list, numbers_all: list) -> dict | None:
             # 값이 숫자가 아니면 도넛 포기
             pass
         else:
-            # 라벨이 비면 fallback(라벨 생성 전이라도 의미 있게)
-            la = (a.get("label") or "").strip()
-            lb = (b.get("label") or "").strip()
-            if not la:
-                la = "항목 A"
-            if not lb:
-                lb = "항목 B"
+            la = (a.get("label") or "").strip() or _fallback_label_from_context(a)
+            lb = (b.get("label") or "").strip() or _fallback_label_from_context(b)
 
             return {
                 "type": "donut",
@@ -1121,24 +1129,42 @@ def run_desk_mode():
         st.divider()
         st.subheader("KPI 라벨 자동 생성(AI)")
         if st.button("AI로 KPI 라벨 채우기", use_container_width=True, key="kpi_label_desk"):
-            numbers = st.session_state.spec["content"].get("numbers", [])
-            if not numbers:
-                st.info("추출된 수치가 없습니다. (본문에 숫자가 없거나 추출 규칙에 안 잡혔어요)")
+            title = st.session_state.spec["meta"].get("title", "") or st.session_state.spec["content"].get("headline", "")
+            article_text = st.session_state.get("article_text", "") or ""
+
+            numbers_sel = st.session_state.spec["content"].get("numbers", []) or []
+            numbers_all = st.session_state.spec["content"].get("numbers_all", []) or numbers_sel
+
+            if not numbers_all:
+                st.info("추출된 수치가 없습니다. 먼저 URL 불러오기를 해주세요.")
             else:
-                title = st.session_state.spec["meta"].get("title", "") or st.session_state.spec["content"].get("headline", "")
-                article_text = st.session_state.get("article_text", "") or ""
-                labeled = infer_kpi_labels_with_ai(
+                # ✅ 후보 전체를 대상으로 라벨 생성(정확도 ↑)
+                labeled_all = infer_kpi_labels_with_ai(
                     title=title,
                     article_text=article_text,
-                    numbers=numbers,
-                    publisher=st.session_state.spec["meta"].get("publisher", "세계일보")
+                    numbers=numbers_all,
+                    publisher=st.session_state.spec["meta"].get("publisher", "세계일보"),
                 )
-                if labeled:
-                    st.session_state.spec["content"]["numbers"] = labeled
-                    st.success("KPI 라벨을 채웠습니다. (필요하면 일부만 수정 후 렌더하세요.)")
+
+                if labeled_all:
+                    # 1) numbers_all 갱신
+                    st.session_state.spec["content"]["numbers_all"] = labeled_all
+
+                    # 2) numbers(선택 4개)에도 라벨 반영
+                    #    동일 값/단위 기반으로 매칭 (추출 안정성 최고)
+                    def key(n):
+                        return (str(n.get("value")), n.get("unit", ""))
+
+                    map_all = {key(n): n for n in labeled_all}
+                    new_sel = []
+                    for n in numbers_sel:
+                        new_sel.append(map_all.get(key(n), n))
+                    st.session_state.spec["content"]["numbers"] = new_sel
+
+                    st.success("AI 라벨을 채웠습니다. 생성(렌더)하면 차트 라벨에도 자동 반영됩니다.")
                     st.session_state.dirty = True
                 else:
-                    st.info("AI 라벨 생성 결과가 없거나 실패했습니다. (API 키/본문/숫자 추출을 확인)")
+                    st.info("AI 라벨 생성이 실패했거나 결과가 비어 있습니다. (API 키/본문/추출값 확인)")
 
         st.divider()
 
@@ -1363,24 +1389,42 @@ def run_public_mode():
         st.divider()
         st.subheader("KPI 라벨 자동 생성(AI)")
         if st.button("AI로 KPI 라벨 채우기", use_container_width=True, key="kpi_label_public"):
-            numbers = st.session_state.spec["content"].get("numbers", [])
-            if not numbers:
-                st.info("추출된 수치가 없습니다. (본문에 숫자가 없거나 추출 규칙에 안 잡혔어요)")
+            title = st.session_state.spec["meta"].get("title", "") or st.session_state.spec["content"].get("headline", "")
+            article_text = st.session_state.get("article_text", "") or ""
+
+            numbers_sel = st.session_state.spec["content"].get("numbers", []) or []
+            numbers_all = st.session_state.spec["content"].get("numbers_all", []) or numbers_sel
+
+            if not numbers_all:
+                st.info("추출된 수치가 없습니다. 먼저 URL 불러오기를 해주세요.")
             else:
-                title = st.session_state.spec["meta"].get("title", "") or st.session_state.spec["content"].get("headline", "")
-                article_text = st.session_state.get("article_text", "") or ""
-                labeled = infer_kpi_labels_with_ai(
+                # ✅ 후보 전체를 대상으로 라벨 생성(정확도 ↑)
+                labeled_all = infer_kpi_labels_with_ai(
                     title=title,
                     article_text=article_text,
-                    numbers=numbers,
-                    publisher=st.session_state.spec["meta"].get("publisher", "세계일보")
+                    numbers=numbers_all,
+                    publisher=st.session_state.spec["meta"].get("publisher", "세계일보"),
                 )
-                if labeled:
-                    st.session_state.spec["content"]["numbers"] = labeled
-                    st.success("KPI 라벨을 채웠습니다. (필요하면 일부만 수정 후 렌더하세요.)")
+
+                if labeled_all:
+                    # 1) numbers_all 갱신
+                    st.session_state.spec["content"]["numbers_all"] = labeled_all
+
+                    # 2) numbers(선택 4개)에도 라벨 반영
+                    #    동일 값/단위 기반으로 매칭 (추출 안정성 최고)
+                    def key(n):
+                        return (str(n.get("value")), n.get("unit", ""))
+
+                    map_all = {key(n): n for n in labeled_all}
+                    new_sel = []
+                    for n in numbers_sel:
+                        new_sel.append(map_all.get(key(n), n))
+                    st.session_state.spec["content"]["numbers"] = new_sel
+
+                    st.success("AI 라벨을 채웠습니다. 생성(렌더)하면 차트 라벨에도 자동 반영됩니다.")
                     st.session_state.dirty = True
                 else:
-                    st.info("AI 라벨 생성 결과가 없거나 실패했습니다. (API 키/본문/숫자 추출을 확인)")
+                    st.info("AI 라벨 생성이 실패했거나 결과가 비어 있습니다. (API 키/본문/추출값 확인)")
 
         with st.expander("수정(선택) — 헤드라인/키포인트만 다듬기", expanded=False):
             title = st.text_input("제목(원문)", value=st.session_state.spec["meta"]["title"])
