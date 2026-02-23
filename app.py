@@ -46,6 +46,57 @@ def strip_css_import(svg: str) -> str:
     return re.sub(r"@import\s+url\([^)]*\);\s*", "", svg)
 
 
+def _font_file_uri(path: str) -> str:
+    """절대 경로를 file:// URI로 (cairosvg가 로컬 폰트 로드하도록)."""
+    try:
+        from pathlib import Path
+        return Path(os.path.abspath(path)).as_uri()
+    except Exception:
+        return ""
+
+
+def svg_fonts_to_absolute_paths(svg: str) -> str:
+    """PNG 변환 시 cairosvg가 한글 폰트를 쓰도록 url("fonts/...") 또는 data URI를 file:// 절대 경로로 치환."""
+    if not svg:
+        return svg
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    out = svg
+    uri_regular = ""
+    uri_bold = ""
+    for name in ("NotoSansKR-Regular.ttf", "NotoSansKR-Bold.ttf"):
+        path = os.path.join(base_dir, "fonts", name)
+        if os.path.isfile(path):
+            u = _font_file_uri(path)
+            if u:
+                if "Regular" in name:
+                    uri_regular = u
+                else:
+                    uri_bold = u
+    # 상대 경로 치환
+    if uri_regular:
+        out = out.replace('url("fonts/NotoSansKR-Regular.ttf")', f'url("{uri_regular}")')
+        out = out.replace("url('fonts/NotoSansKR-Regular.ttf')", f"url('{uri_regular}')")
+    if uri_bold:
+        out = out.replace('url("fonts/NotoSansKR-Bold.ttf")', f'url("{uri_bold}")')
+        out = out.replace("url('fonts/NotoSansKR-Bold.ttf')", f"url('{uri_bold}')")
+    # data URI → file:// (cairosvg가 data URI 폰트를 지원하지 않을 수 있음)
+    if uri_regular:
+        out = re.sub(
+            r'url\("data:font/ttf;base64,[^"]+"\)(?=\s*format\(\'truetype\'\)\s*;\s*font-weight:\s*400)',
+            f'url("{uri_regular}")',
+            out,
+            count=1,
+        )
+    if uri_bold:
+        out = re.sub(
+            r'url\("data:font/ttf;base64,[^"]+"\)(?=\s*format\(\'truetype\'\)\s*;\s*font-weight:\s*700)',
+            f'url("{uri_bold}")',
+            out,
+            count=1,
+        )
+    return out
+
+
 def get_openai_client():
     key = None
     try:
@@ -773,6 +824,7 @@ def run_desk_mode():
                 import cairosvg
                 safe_svg = sanitize_svg_for_png(st.session_state.svg)
                 safe_svg = strip_css_import(safe_svg)
+                safe_svg = svg_fonts_to_absolute_paths(safe_svg)
                 png_bytes = cairosvg.svg2png(bytestring=safe_svg.encode("utf-8"))
                 st.download_button(
                     label="PNG 다운로드",
@@ -1013,6 +1065,7 @@ def run_public_mode():
                 import cairosvg
                 safe_svg = sanitize_svg_for_png(st.session_state.svg)
                 safe_svg = strip_css_import(safe_svg)
+                safe_svg = svg_fonts_to_absolute_paths(safe_svg)
                 png_bytes = cairosvg.svg2png(bytestring=safe_svg.encode("utf-8"))
                 st.download_button(
                     label="PNG 다운로드",
