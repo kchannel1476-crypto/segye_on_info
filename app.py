@@ -598,11 +598,11 @@ env = Environment(
     loader=FileSystemLoader("templates"),
     autoescape=select_autoescape(enabled_extensions=("svg", "j2", "xml")),
 )
-_tpl = {
+tpl_map = {
     "story_lite": env.get_template("story_lite.svg.j2"),
     "data_focus": env.get_template("data_focus.svg.j2"),
-    "timeline": env.get_template("timeline.svg.j2"),
-    "compare": env.get_template("compare.svg.j2"),
+    # "timeline": env.get_template("timeline.svg.j2"),
+    # "compare": env.get_template("compare.svg.j2"),
 }
 
 
@@ -621,10 +621,9 @@ def _load_font_base64():
     return out
 
 
-def render_svg(template_key: str, render_model: dict) -> str:
-    tpl = _tpl.get(template_key) or _tpl["story_lite"]
-    chart = render_model.get("chart") if isinstance(render_model, dict) else None
-    rm = {**render_model, "chart": chart}
+def render_svg(tpl_key: str, rm: dict) -> str:
+    tpl = tpl_map.get(tpl_key) or tpl_map["story_lite"]
+    rm = {**rm}
     rm.update(_load_font_base64())
     return tpl.render(**rm)
 
@@ -662,9 +661,187 @@ def choose_layout(spec: dict) -> dict:
         return {"template":"compare", "ratio":"1:1", "sections":["headline","comparison","key_points","sources"]}
     return {"template":"story_lite", "ratio":"1:1", "sections":["headline","key_points","callout","sources"]}
 
+
+def _to_float_safe(x):
+    try:
+        return float(x)
+    except Exception:
+        return None
+
+
+def _num_display(n: dict) -> str:
+    """템플릿 우측 값 표시용(바 차트)"""
+    v = n.get("value")
+    u = n.get("unit", "")
+    if isinstance(v, (int, float)):
+        # 정수면 .0 제거
+        if float(v).is_integer():
+            v = int(v)
+    return f"{v}{u}".strip()
+
+
+def _is_ratio(n: dict) -> bool:
+    return "%" in (n.get("unit", "") or "")
+
+
+def _pick_ratio_pair(numbers_all: list) -> list:
+    """
+    도넛용 2개를 뽑는다.
+    - 같은 문장(context)에서 나온 % 2개를 최우선
+    - 없으면 % 상위 2개
+    """
+    ratios = [n for n in (numbers_all or []) if _is_ratio(n)]
+    if len(ratios) < 2:
+        return []
+
+    # 1) 같은 문장(context)에서 나온 2개 찾기
+    by_ctx = {}
+    for n in ratios:
+        ctx = (n.get("context") or "").strip()
+        by_ctx.setdefault(ctx, []).append(n)
+
+    best_pair = []
+    for ctx, arr in by_ctx.items():
+        if len(arr) >= 2:
+            # 점수/우선순위가 이미 반영된 순서라고 가정하고 앞 2개
+            best_pair = arr[:2]
+            break
+
+    if best_pair:
+        return best_pair
+
+    # 2) 그냥 상위 2개
+    return ratios[:2]
+
+
+def build_auto_chart(numbers_selected: list, numbers_all: list) -> dict | None:
+    """
+    템플릿(data_focus.svg.j2)이 기대하는 형태로 chart 모델 생성.
+    - ratio 2개 이상이면 donut
+    - 아니면 비교 가능한 숫자 2개 이상이면 bar
+    """
+    nums_all = numbers_all or numbers_selected or []
+    if not nums_all:
+        return None
+
+    # 1) 도넛: % 2개
+    pair = _pick_ratio_pair(nums_all)
+    if len(pair) == 2:
+        a, b = pair[0], pair[1]
+        va = _to_float_safe(a.get("value"))
+        vb = _to_float_safe(b.get("value"))
+        if va is None or vb is None:
+            # 값이 숫자가 아니면 도넛 포기
+            pass
+        else:
+            # 라벨이 비면 fallback(라벨 생성 전이라도 의미 있게)
+            la = (a.get("label") or "").strip()
+            lb = (b.get("label") or "").strip()
+            if not la:
+                la = "항목 A"
+            if not lb:
+                lb = "항목 B"
+
+            return {
+                "type": "donut",
+                "items": [
+                    {"label": la, "value": va, "unit": a.get("unit", "%")},
+                    {"label": lb, "value": vb, "unit": b.get("unit", "%")},
+                ]
+            }
+
+    # 2) 바: 비교 가능한 숫자 2~4개 (단위가 크게 다르면 제외)
+    #    우선 selected에서 2개 이상 뽑고, 부족하면 all에서 채움
+    candidates = []
+    seen = set()
+
+    def add(n):
+        key = (str(n.get("value")), n.get("unit", ""))
+        if key in seen:
+            return
+        if _to_float_safe(n.get("value")) is None:
+            return
+        seen.add(key)
+        candidates.append(n)
+
+    for n in (numbers_selected or []):
+        add(n)
+    if len(candidates) < 2:
+        for n in (nums_all or []):
+            add(n)
+            if len(candidates) >= 4:
+                break
+
+    # 단위가 너무 섞이면 bar가 의미 없어서, "같은 버킷" 위주로 정리
+    def bucket(n):
+        u = n.get("unit", "")
+        if "%" in u:
+            return "ratio"
+        if u in ("명", "건", "개"):
+            return "count"
+        if u in ("원", "만", "억", "조") or ("원" in u):
+            return "money"
+        if u in ("년", "개월", "일", "시간"):
+            return "time"
+        return "other"
+
+    if len(candidates) >= 2:
+        # 가장 많이 모인 버킷 선택
+        from collections import Counter
+        b = Counter([bucket(n) for n in candidates]).most_common(1)[0][0]
+        filtered = [n for n in candidates if bucket(n) == b]
+        if len(filtered) >= 2:
+            candidates = filtered[:4]
+
+    if len(candidates) < 2:
+        return None
+
+    vals = [_to_float_safe(n.get("value")) for n in candidates]
+    vals = [v for v in vals if v is not None]
+    if not vals:
+        return None
+
+    vmax = max(vals) if max(vals) > 0 else 1.0
+
+    items = []
+    for n in candidates[:4]:
+        v = _to_float_safe(n.get("value"))
+        if v is None:
+            continue
+        label = (n.get("label") or "").strip()
+        if not label:
+            # fallback: 단위 기반
+            u = n.get("unit", "")
+            if "%" in u:
+                label = "비율"
+            elif u in ("명","건","개"):
+                label = "규모"
+            elif u in ("원","만","억","조") or ("원" in u):
+                label = "금액"
+            elif u in ("년","개월","일","시간"):
+                label = "기간"
+            else:
+                label = "수치"
+
+        items.append({
+            "label": label,
+            "value": _num_display(n),
+            "norm": max(min(v / vmax, 1.0), 0.0)
+        })
+
+    if len(items) >= 2:
+        return {"type": "bar", "items": items}
+
+    return None
+
+
 def build_render_model(spec: dict) -> dict:
     meta = spec["meta"]
     c = spec["content"]
+
+    numbers_selected = c.get("numbers", []) or []
+    numbers_all = c.get("numbers_all", []) or numbers_selected
+    chart = build_auto_chart(numbers_selected, numbers_all)
 
     kp = [xml_escape(x.get("text", "")) for x in c.get("key_points", [])]
     kp = (kp + ["", "", ""])[:3]
@@ -774,8 +951,9 @@ def build_render_model(spec: dict) -> dict:
             "has_quote": bool(quote_line),
             "has_callout": bool(callout_title or callout_body)
         },
-        "numbers": c.get("numbers", []),
-        "chart": (c.get("charts") or [None])[0],
+        # ✅ 템플릿에서 바로 사용
+        "numbers": numbers_selected,
+        "chart": chart,
     }
 
 # -----------------------------
@@ -1013,8 +1191,8 @@ def run_desk_mode():
 
             if st.button("생성(렌더)", use_container_width=True):
                 st.session_state.spec["layout"] = choose_layout(st.session_state.spec)
+                tpl_key = st.session_state.get("template", "story_lite")
                 rm = build_render_model(st.session_state.spec)
-                tpl_key = st.session_state.get("template") or st.session_state.get("template_hint") or "story_lite"
                 st.session_state.svg = render_svg(tpl_key, rm)
 
     with right:
@@ -1262,8 +1440,8 @@ def run_public_mode():
         with c2:
             if st.button("생성(렌더)"):
                 st.session_state.spec["layout"] = choose_layout(st.session_state.spec)
+                tpl_key = st.session_state.get("template", "story_lite")
                 rm = build_render_model(st.session_state.spec)
-                tpl_key = st.session_state.get("template") or st.session_state.get("template_hint") or "story_lite"
                 st.session_state.svg = render_svg(tpl_key, rm)
                 st.session_state.dirty = False
 
