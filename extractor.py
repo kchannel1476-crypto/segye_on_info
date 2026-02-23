@@ -304,6 +304,8 @@ def choose_kpis(nums: list, k: int = 4, title: str = "") -> list:
     if not nums:
         return []
 
+    nums = dedupe_by_context(nums, per_bucket_per_sentence=2)
+
     candidates = []
     for n in nums:
         nn = dict(n)
@@ -349,3 +351,25 @@ def choose_kpis(nums: list, k: int = 4, title: str = "") -> list:
     for p in picked:
         p.pop("_score", None)
     return picked[:k]
+
+
+def dedupe_by_context(nums: list, per_bucket_per_sentence: int = 2) -> list:
+    """
+    같은 문장(context) 안에서 같은 bucket(예: ratio)이 너무 많이 나오면 제한.
+    """
+    if not nums:
+        return []
+
+    out = []
+    counter = {}  # (context, bucket) -> count
+
+    for n in nums:
+        ctx = (n.get("context") or "").strip()
+        b = _kpi_bucket(n.get("unit", ""))
+        key = (ctx, b)
+
+        counter[key] = counter.get(key, 0) + 1
+        if counter[key] <= per_bucket_per_sentence:
+            out.append(n)
+
+    return out
