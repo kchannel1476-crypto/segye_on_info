@@ -49,8 +49,10 @@ def _first_text(soup: BeautifulSoup, selectors: list[str]) -> str:
 
 
 def _article_text(soup: BeautifulSoup) -> str:
-    # 범용: article 태그 우선, 없으면 본문 후보 div들 탐색
+    # segye 전용 후보(우선) + 공통 후보
     candidates = [
+        "div.view_text",              # segye (실제 DOM에 맞게 조정 가능)
+        "div#article_txt",           # segye
         "article",
         "div[itemprop='articleBody']",
         "div.article-body",
@@ -103,3 +105,17 @@ def has_numbers(text: str) -> bool:
     if not text:
         return False
     return bool(_NUM_RE.search(text))
+
+
+def extract_numbers(text: str, limit: int = 8) -> list[str]:
+    if not text:
+        return []
+    found = _NUM_RE.findall(text)
+    # 중복 제거(순서 유지)
+    out = []
+    for x in found:
+        if x not in out:
+            out.append(x)
+        if len(out) >= limit:
+            break
+    return out
