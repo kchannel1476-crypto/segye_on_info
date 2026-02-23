@@ -1,10 +1,24 @@
+import os
 from urllib.parse import urlparse
 import time
 import re
 import streamlit as st
 import json
+
+
+def get_openai_client():
+    key = None
+    try:
+        key = st.secrets.get("OPENAI_API_KEY")
+    except Exception:
+        pass
+    key = key or os.getenv("OPENAI_API_KEY")
+    if not key:
+        return None
+    from openai import OpenAI
+    return OpenAI(api_key=key)
 from jinja2 import Environment, FileSystemLoader
-from extractor import extract_article, has_numbers, extract_numbers
+from extractor import extract_article, has_numbers, extract_numbers_with_context
 
 
 def normalize_url(u: str) -> str:
@@ -100,18 +114,14 @@ def default_spec():
 
 def choose_layout(spec: dict) -> dict:
     c = spec.get("content", {})
-
     if len(c.get("charts", [])) >= 1 or len(c.get("numbers", [])) >= 2:
-        return {"template": "data_focus", "ratio": "1:1", "sections": ["headline","chart","key_points","sources"]}
-
+        return {"template":"data_focus", "ratio":"1:1", "sections":["headline","chart","key_points","sources"]}
     if len(c.get("timeline", [])) >= 4:
-        return {"template": "timeline", "ratio": "1:1", "sections": ["headline","timeline","key_points","sources"]}
-
+        return {"template":"timeline", "ratio":"1:1", "sections":["headline","timeline","key_points","sources"]}
     comp_items = c.get("comparison", {}).get("items", [])
     if len(comp_items) >= 3:
-        return {"template": "compare", "ratio": "1:1", "sections": ["headline","comparison","key_points","sources"]}
-
-    return {"template": "story_lite", "ratio": "1:1", "sections": ["headline","key_points","callout","sources"]}
+        return {"template":"compare", "ratio":"1:1", "sections":["headline","comparison","key_points","sources"]}
+    return {"template":"story_lite", "ratio":"1:1", "sections":["headline","key_points","callout","sources"]}
 
 def build_render_model(spec: dict) -> dict:
     meta = spec["meta"]
@@ -138,7 +148,8 @@ def build_render_model(spec: dict) -> dict:
     charts = c.get("charts", [])
     chart_title = charts[0].get("title", "").strip() if charts else ""
     chart_note = charts[0].get("note", "").strip() if charts else ""
-    numbers = c.get("numbers", [])[:2]
+    nums = c.get("numbers", [])[:3]
+    numbers = nums[:2]
     big1 = str(numbers[0].get("value", "")) if numbers else ""
     big1_label = (numbers[0].get("label", "") or numbers[0].get("context", "") or "").strip() if numbers else ""
     big2 = str(numbers[1].get("value", "")) if len(numbers) > 1 else ""
@@ -181,7 +192,8 @@ def build_render_model(spec: dict) -> dict:
         "flags": {
             "has_quote": bool(quote_line),
             "has_callout": bool(callout_title or callout_body)
-        }
+        },
+        "numbers": nums,
     }
 
 # -----------------------------
@@ -267,10 +279,50 @@ with left:
         st.session_state.spec["content"]["callouts"][0]["title"] = "핵심 맥락"
         st.session_state.spec["content"]["callouts"][0]["body"] = make_simple_callout(article_text)
 
-        # 숫자 유무로 템플릿 추천
-        st.session_state["template_hint"] = "data_focus" if has_numbers(article_text) else "story_lite"
+        # 숫자+문맥 추출 후 spec.numbers 반영
+        nums = extract_numbers_with_context(article_text, limit=6)
+        st.session_state.spec["content"]["numbers"] = [
+            {"label": x.get("label", ""), "value": x.get("value", ""), "unit": "", "context": x.get("context", "")}
+            for x in nums
+        ]
+
+        # 숫자 개수로 템플릿 추천
+        st.session_state["template_hint"] = "data_focus" if len(st.session_state.spec["content"]["numbers"]) >= 2 else "story_lite"
 
         st.success("자동 초안이 생성되었습니다. 필요하면 아래에서 일부만 수정 후 '생성(렌더)'를 눌러주세요.")
+
+    if st.button("AI 초안 생성"):
+        client = get_openai_client()
+        if not client:
+            st.error("API 키가 설정되지 않았습니다.")
+        else:
+            article_text = st.session_state.get("article_text", "")
+            if not article_text:
+                st.warning("먼저 URL을 불러오세요.")
+            else:
+                with st.spinner("AI가 초안을 생성 중입니다..."):
+                    prompt = f"""
+다음 세계일보 기사 내용을 인포그래픽 초안으로 요약하세요.
+
+형식:
+- headline
+- key_points 3개
+- callout (핵심 맥락 1문장)
+
+기사:
+{article_text[:6000]}
+"""
+                    resp = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.3,
+                    )
+                    draft = resp.choices[0].message.content
+                    st.session_state.spec["content"]["callouts"][0]["body"] = draft
+                    st.success("AI 초안 생성 완료")
+
+    with st.expander("추출된 숫자(자동) 확인", expanded=False):
+        st.json(st.session_state.spec["content"].get("numbers", []))
 
     with st.expander("수정(선택) — 헤드라인/키포인트만 다듬기", expanded=False):
         title = st.text_input("제목(원문)", value=st.session_state.spec["meta"]["title"])

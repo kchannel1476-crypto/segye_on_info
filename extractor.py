@@ -119,3 +119,23 @@ def extract_numbers(text: str, limit: int = 8) -> list[str]:
         if len(out) >= limit:
             break
     return out
+
+
+def extract_numbers_with_context(text: str, limit: int = 8, context_chars: int = 40) -> list[dict]:
+    """숫자와 주변 맥락(문맥)을 함께 반환. [{"value": str, "context": str}, ...]"""
+    if not text:
+        return []
+    out = []
+    seen = set()
+    for m in _NUM_RE.finditer(text):
+        if len(out) >= limit:
+            break
+        val = m.group(0)
+        if val in seen:
+            continue
+        seen.add(val)
+        start = max(0, m.start() - context_chars)
+        end = min(len(text), m.end() + context_chars)
+        ctx = text[start:end].replace("\n", " ").strip()
+        out.append({"value": val, "context": ctx})
+    return out

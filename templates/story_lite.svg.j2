@@ -55,6 +55,20 @@
     <text class="body muted" x="{{ x0 + 28 }}" y="{{ c_top + 130 }}">{{ text.callout_body }}</text>
   {% endif %}
 
+  {% if numbers and numbers|length > 0 %}
+  <!-- Numbers (auto) -->
+  <g id="numbers">
+    {% for n in numbers[:3] %}
+    <text x="72" y="{{ 820 + loop.index0*70 }}" font-size="34" font-weight="700">
+      {{ n.value }}
+    </text>
+    <text x="260" y="{{ 820 + loop.index0*70 }}" font-size="22" opacity="0.85">
+      {{ n.label }}
+    </text>
+    {% endfor %}
+  </g>
+  {% endif %}
+
   <!-- Footer -->
   <line class="hair" x1="{{ x0 }}" y1="{{ canvas.h - m - 90 }}" x2="{{ x1 }}" y2="{{ canvas.h - m - 90 }}"/>
   <text class="small muted" x="{{ x0 }}" y="{{ canvas.h - m - 45 }}">{{ text.sources_line }}</text>
