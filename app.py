@@ -136,19 +136,22 @@ def svg_fonts_to_absolute_paths(svg: str) -> str:
     return out
 
 
-def _get_openai_api_key():
-    """OPENAI_API_KEY를 st.secrets 또는 환경변수에서 읽음. 없으면 빈 문자열."""
+def _get_openai_api_key() -> str:
+    # 1) Streamlit Cloud Secrets 우선
     key = None
     try:
         key = st.secrets.get("OPENAI_API_KEY")
     except Exception:
-        pass
-    key = key or os.getenv("OPENAI_API_KEY") or ""
+        key = None
+
+    # 2) 로컬/기타 환경변수 fallback
+    if not key:
+        key = os.getenv("OPENAI_API_KEY")
+
     return (key or "").strip()
 
 
 def is_openai_api_key_configured() -> bool:
-    """API 키가 설정되어 있는지 확인 (값 노출 없음)."""
     return bool(_get_openai_api_key())
 
 
