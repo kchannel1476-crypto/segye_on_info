@@ -1,0 +1,58 @@
+{% import "_tokens.j2" as T %}
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ canvas.w }}" height="{{ canvas.h }}" viewBox="0 0 {{ canvas.w }} {{ canvas.h }}">
+  <defs>
+    {{ T.common_styles() }}
+  </defs>
+
+  {% include "_tokens.j2" %}
+  <rect class="bg" x="0" y="0" width="{{ W }}" height="{{ H }}"/>
+
+  <!-- Header -->
+  <text class="h1 ink" x="{{ x0 }}" y="{{ m + 72 }}">{{ text.headline }}</text>
+  {% if text.dek %}
+    <text class="dek muted" x="{{ x0 }}" y="{{ m + 120 }}">{{ text.dek }}</text>
+  {% endif %}
+  <line class="hair" x1="{{ x0 }}" y1="{{ header_line_y }}" x2="{{ x1 }}" y2="{{ header_line_y }}"/>
+
+  <!-- Comparison area: two equal columns -->
+  <text class="label ink" x="{{ x0 }}" y="{{ body_top }}">쟁점 비교</text>
+
+  {% set box_y = body_top + 30 %}
+  {% set box_h = 470 %}
+  {% set mid = (x0 + x1) / 2 %}
+  {% set pad = 24 %}
+
+  <rect class="box" x="{{ x0 }}" y="{{ box_y }}" width="{{ (x1-x0)/2 - 12 }}" height="{{ box_h }}" rx="18"/>
+  <rect class="box" x="{{ mid + 12 }}" y="{{ box_y }}" width="{{ (x1-x0)/2 - 12 }}" height="{{ box_h }}" rx="18"/>
+
+  <text class="label ink" x="{{ x0 + pad }}" y="{{ box_y + 68 }}">{{ text.left_title }}</text>
+  <text class="label ink" x="{{ mid + 12 + pad }}" y="{{ box_y + 68 }}">{{ text.right_title }}</text>
+
+  {% set row_y = box_y + 130 %}
+  {% for i in range(text.compare_rows|length) %}
+    {% set yy = row_y + (i * 78) %}
+    {% if yy < box_y + box_h - 20 %}
+      <circle cx="{{ x0 + pad + 6 }}" cy="{{ yy - 10 }}" r="6" fill="#111111"/>
+      <text class="body ink" x="{{ x0 + pad + 30 }}" y="{{ yy }}">{{ text.compare_rows[i].left }}</text>
+
+      <circle cx="{{ mid + 12 + pad + 6 }}" cy="{{ yy - 10 }}" r="6" fill="#111111"/>
+      <text class="body ink" x="{{ mid + 12 + pad + 30 }}" y="{{ yy }}">{{ text.compare_rows[i].right }}</text>
+    {% endif %}
+  {% endfor %}
+
+  <!-- Key points below comparison -->
+  {% set ky = box_y + box_h + 70 %}
+  <line class="hair" x1="{{ x0 }}" y1="{{ ky - 40 }}" x2="{{ x1 }}" y2="{{ ky - 40 }}"/>
+  <text class="label ink" x="{{ x0 }}" y="{{ ky }}">정리</text>
+
+  {% set kpy = ky + 70 %}
+  {% for i in range(3) %}
+    {% set yy = kpy + (i * 86) %}
+    <circle cx="{{ x0 + 12 }}" cy="{{ yy - 10 }}" r="6" fill="#111111"/>
+    <text class="body ink" x="{{ x0 + 36 }}" y="{{ yy }}">{{ text.key_points[i] }}</text>
+  {% endfor %}
+
+  <!-- Footer -->
+  <line class="hair" x1="{{ x0 }}" y1="{{ footer_line_y }}" x2="{{ x1 }}" y2="{{ footer_line_y }}"/>
+  <text class="small muted" x="{{ x0 }}" y="{{ sources_y }}">{{ text.sources_line }}</text>
+</svg>

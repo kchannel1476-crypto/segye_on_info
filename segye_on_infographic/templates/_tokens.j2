@@ -1,0 +1,50 @@
+{# ============================
+   SEGYE.ON Infographic Tokens v1
+   - Common canvas/grid/frame rules
+   ============================ #}
+
+{% set W = canvas.w %}
+{% set H = canvas.h %}
+{% set m = canvas.margin %}
+
+{% set safe_w = W - (m*2) %}
+{% set cols = 12 %}
+{% set g = 24 %}
+{% set colw = (safe_w - g*(cols-1)) / cols %}
+
+{% set x0 = m %}
+{% set x1 = W - m %}
+
+{# Fixed frame #}
+{% set header_line_y = m + 160 %}
+{% set body_top = header_line_y + 70 %}
+{% set footer_line_y = H - m - 90 %}
+{% set sources_y = H - m - 45 %}
+
+{# Column start x for column index c (0-based) #}
+{% macro cx(c) -%}
+  {{ x0 + (c * colw) + (c * g) }}
+{%- endmacro %}
+
+{# Column width for n columns #}
+{% macro cw(n) -%}
+  {{ (n * colw) + ((n-1) * g) }}
+{%- endmacro %}
+
+{# Common styles (Segye tone) #}
+{% macro common_styles() -%}
+<style type="text/css"><![CDATA[
+  .bg { fill: #ffffff; }
+  .ink { fill: #111111; }
+  .muted { fill: #666666; }
+  .hair { stroke: #dddddd; stroke-width: 2; }
+  .box { fill: #f6f6f6; }
+  .h1 { font-family: "Noto Serif KR","AppleMyungjo",serif; font-size: 56px; font-weight: 700; }
+  .dek { font-family: "Noto Sans KR","Apple SD Gothic Neo",sans-serif; font-size: 28px; font-weight: 400; }
+  .label { font-family: "Noto Sans KR","Apple SD Gothic Neo",sans-serif; font-size: 34px; font-weight: 600; }
+  .bp { font-family: "Noto Sans KR","Apple SD Gothic Neo",sans-serif; font-size: 34px; font-weight: 600; }
+  .body { font-family: "Noto Sans KR","Apple SD Gothic Neo",sans-serif; font-size: 30px; font-weight: 400; }
+  .bodyb { font-family: "Noto Sans KR","Apple SD Gothic Neo",sans-serif; font-size: 30px; font-weight: 600; }
+  .small { font-family: "Noto Sans KR","Apple SD Gothic Neo",sans-serif; font-size: 22px; font-weight: 400; }
+]]></style>
+{%- endmacro %}

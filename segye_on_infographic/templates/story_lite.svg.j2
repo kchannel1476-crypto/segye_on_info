@@ -1,0 +1,48 @@
+{% import "_tokens.j2" as T %}
+<svg xmlns="http://www.w3.org/2000/svg" width="{{ canvas.w }}" height="{{ canvas.h }}" viewBox="0 0 {{ canvas.w }} {{ canvas.h }}">
+  <defs>
+    {{ T.common_styles() }}
+  </defs>
+
+  {% include "_tokens.j2" %}
+
+  <rect class="bg" x="0" y="0" width="{{ W }}" height="{{ H }}"/>
+
+  <!-- Header -->
+  <text class="h1 ink" x="{{ x0 }}" y="{{ m + 72 }}">{{ text.headline }}</text>
+  {% if text.dek %}
+    <text class="dek muted" x="{{ x0 }}" y="{{ m + 120 }}">{{ text.dek }}</text>
+  {% endif %}
+  <line class="hair" x1="{{ x0 }}" y1="{{ header_line_y }}" x2="{{ x1 }}" y2="{{ header_line_y }}"/>
+
+  <!-- Body: Key points -->
+  <text class="label ink" x="{{ x0 }}" y="{{ body_top }}">핵심</text>
+
+  {% set start_y = body_top + 70 %}
+  {% for i in range(3) %}
+    {% set yy = start_y + (i * 90) %}
+    <circle cx="{{ x0 + 12 }}" cy="{{ yy - 10 }}" r="6" fill="#111111"/>
+    <text class="body ink" x="{{ x0 + 36 }}" y="{{ yy }}">{{ text.key_points[i] }}</text>
+  {% endfor %}
+
+  <!-- Quote (optional) -->
+  {% set q_y = start_y + (3 * 90) + 60 %}
+  {% set next_y = q_y %}
+  {% if flags.has_quote and text.quote_line %}
+    <line class="hair" x1="{{ x0 }}" y1="{{ q_y - 30 }}" x2="{{ x1 }}" y2="{{ q_y - 30 }}"/>
+    <text class="label ink" x="{{ x0 }}" y="{{ q_y }}">인용</text>
+    <text class="body ink" x="{{ x0 }}" y="{{ q_y + 62 }}">"{{ text.quote_line }}"</text>
+    {% set next_y = q_y + 140 %}
+  {% endif %}
+
+  <!-- Callout -->
+  {% if flags.has_callout and (text.callout_title or text.callout_body) %}
+    <rect class="box" x="{{ x0 }}" y="{{ next_y }}" width="{{ x1 - x0 }}" height="220" rx="18" />
+    <text class="label ink" x="{{ x0 + 28 }}" y="{{ next_y + 68 }}">{{ text.callout_title }}</text>
+    <text class="body muted" x="{{ x0 + 28 }}" y="{{ next_y + 130 }}">{{ text.callout_body }}</text>
+  {% endif %}
+
+  <!-- Footer -->
+  <line class="hair" x1="{{ x0 }}" y1="{{ footer_line_y }}" x2="{{ x1 }}" y2="{{ footer_line_y }}"/>
+  <text class="small muted" x="{{ x0 }}" y="{{ sources_y }}">{{ text.sources_line }}</text>
+</svg>
