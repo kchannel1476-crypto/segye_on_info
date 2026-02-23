@@ -32,6 +32,20 @@ def sanitize_svg_for_png(svg: str) -> str:
     return svg
 
 
+def strip_svg_imports(svg: str) -> str:
+    """SVG 문자열에서 @import url(...); 제거 (일부 렌더러 호환용)."""
+    if not svg:
+        return ""
+    return re.sub(r"@import\s+url\([^;]+;\s*", "", svg)
+
+
+def strip_css_import(svg: str) -> str:
+    """SVG에서 @import url(...); 제거."""
+    if not svg:
+        return ""
+    return re.sub(r"@import\s+url\([^)]*\);\s*", "", svg)
+
+
 def get_openai_client():
     key = None
     try:
@@ -743,6 +757,7 @@ def run_desk_mode():
             try:
                 import cairosvg
                 safe_svg = sanitize_svg_for_png(st.session_state.svg)
+                safe_svg = strip_css_import(safe_svg)
                 png_bytes = cairosvg.svg2png(bytestring=safe_svg.encode("utf-8"))
                 st.download_button(
                     label="PNG 다운로드",
@@ -982,6 +997,7 @@ def run_public_mode():
             try:
                 import cairosvg
                 safe_svg = sanitize_svg_for_png(st.session_state.svg)
+                safe_svg = strip_css_import(safe_svg)
                 png_bytes = cairosvg.svg2png(bytestring=safe_svg.encode("utf-8"))
                 st.download_button(
                     label="PNG 다운로드",
