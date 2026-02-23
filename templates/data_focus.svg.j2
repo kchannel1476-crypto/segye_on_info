@@ -1,61 +1,102 @@
+{# templates/data_focus.svg.j2 #}
 <svg xmlns="http://www.w3.org/2000/svg" width="{{ canvas.w }}" height="{{ canvas.h }}" viewBox="0 0 {{ canvas.w }} {{ canvas.h }}">
   <defs>
-    <style type="text/css"><![CDATA[
+    <style>
       .bg { fill: #ffffff; }
       .ink { fill: #111111; }
-      .muted { fill: #666666; }
-      .hair { stroke: #dddddd; stroke-width: 2; }
-      .h1 { font-family: "Noto Serif KR", "AppleMyungjo", serif; font-size: 56px; font-weight: 700; }
-      .dek { font-family: "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; font-size: 28px; font-weight: 400; }
-      .bp { font-family: "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; font-size: 34px; font-weight: 600; }
-      .body { font-family: "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; font-size: 30px; font-weight: 400; }
-      .small { font-family: "Noto Sans KR", "Apple SD Gothic Neo", sans-serif; font-size: 22px; font-weight: 400; }
-    ]]></style>
+      .muted { fill: #444444; }
+      .muted2 { fill: #666666; }
+      .line { stroke: #E6E6E6; stroke-width: 2; }
+      .card { fill: #F7F7F7; stroke: #E7E7E7; stroke-width: 2; rx: 18; ry: 18; }
+      .badge { fill: #111111; rx: 12; ry: 12; }
+      .badgeText { fill: #ffffff; font-size: 18px; font-weight: 700; letter-spacing: 0.2px; }
+      .h1 { fill: #111111; font-size: 54px; font-weight: 800; letter-spacing: -0.6px; }
+      .dek { fill: #333333; font-size: 24px; font-weight: 500; letter-spacing: -0.2px; }
+      .kpiVal { fill: #111111; font-size: 44px; font-weight: 800; letter-spacing: -0.4px; }
+      .kpiLabel { fill: #333333; font-size: 20px; font-weight: 700; letter-spacing: -0.2px; }
+      .kpiNote { fill: #555555; font-size: 18px; font-weight: 500; letter-spacing: -0.1px; }
+      .kpNum { fill: #ffffff; font-size: 16px; font-weight: 800; }
+      .kpNumBg { fill: #111111; rx: 10; ry: 10; }
+      .kpText { fill: #111111; font-size: 22px; font-weight: 600; letter-spacing: -0.2px; }
+      .src { fill: #666666; font-size: 18px; font-weight: 500; }
+    </style>
   </defs>
 
+  {# --- Base --- #}
   <rect class="bg" x="0" y="0" width="{{ canvas.w }}" height="{{ canvas.h }}"/>
 
-  {% set m = canvas.margin %}
-  {% set x0 = m %}
-  {% set x1 = canvas.w - m %}
-  {% set y = m %}
+  {% set M = canvas.margin %}
+  {% set W = canvas.w %}
+  {% set H = canvas.h %}
 
-  <!-- Header -->
-  <text class="h1 ink" x="{{ x0 }}" y="{{ y + 72 }}">{{ text.headline }}</text>
-  {% if text.dek %}
-    <text class="dek muted" x="{{ x0 }}" y="{{ y + 120 }}">{{ text.dek }}</text>
-  {% endif %}
+  {# --- Header --- #}
+  <g id="header" transform="translate({{ M }}, {{ M }})">
+    <rect class="badge" x="0" y="0" width="104" height="30" rx="12" ry="12"/>
+    <text class="badgeText" x="14" y="22">DATA</text>
 
-  <line class="hair" x1="{{ x0 }}" y1="{{ y + 160 }}" x2="{{ x1 }}" y2="{{ y + 160 }}"/>
+    <text class="h1" x="0" y="92">{{ text.headline }}</text>
 
-  <!-- Key points -->
-  {% set kp_y = y + 230 %}
-  <text class="bp ink" x="{{ x0 }}" y="{{ kp_y }}">핵심</text>
-  {% for i in range(3) %}
-    {% set yy = kp_y + 70 + (i * 90) %}
-    <circle cx="{{ x0 + 12 }}" cy="{{ yy - 10 }}" r="6" fill="#111111"/>
-    <text class="body ink" x="{{ x0 + 36 }}" y="{{ yy }}">{{ text.key_points[i] }}</text>
-  {% endfor %}
+    {% if text.dek %}
+      <text class="dek" x="0" y="132">{{ text.dek }}</text>
+    {% endif %}
 
-  <!-- Quote (optional) -->
-  {% set q_y = kp_y + 70 + (3 * 90) + 60 %}
-  {% if flags.has_quote and text.quote_line %}
-    <line class="hair" x1="{{ x0 }}" y1="{{ q_y - 30 }}" x2="{{ x1 }}" y2="{{ q_y - 30 }}"/>
-    <text class="bp ink" x="{{ x0 }}" y="{{ q_y }}">인용</text>
-    <text class="body ink" x="{{ x0 }}" y="{{ q_y + 62 }}">"{{ text.quote_line }}"</text>
-    {% set c_top = q_y + 140 %}
-  {% else %}
-    {% set c_top = q_y - 10 %}
-  {% endif %}
+    <line class="line" x1="0" y1="170" x2="{{ W - (M*2) }}" y2="170"/>
+  </g>
 
-  <!-- Callout -->
-  {% if flags.has_callout and (text.callout_title or text.callout_body) %}
-    <rect x="{{ x0 }}" y="{{ c_top }}" width="{{ x1 - x0 }}" height="220" fill="#f6f6f6" rx="18" />
-    <text class="bp ink" x="{{ x0 + 28 }}" y="{{ c_top + 68 }}">{{ text.callout_title }}</text>
-    <text class="body muted" x="{{ x0 + 28 }}" y="{{ c_top + 130 }}">{{ text.callout_body }}</text>
-  {% endif %}
+  {# --- KPI Cards Grid --- #}
+  {% set gridX = M %}
+  {% set gridY = M + 220 %}
+  {% set gridW = W - (M*2) %}
+  {% set gap = 24 %}
+  {% set cardW = (gridW - gap) / 2 %}
+  {% set cardH = 170 %}
 
-  <!-- Footer -->
-  <line class="hair" x1="{{ x0 }}" y1="{{ canvas.h - m - 90 }}" x2="{{ x1 }}" y2="{{ canvas.h - m - 90 }}"/>
-  <text class="small muted" x="{{ x0 }}" y="{{ canvas.h - m - 45 }}">{{ text.sources_line }}</text>
+  {% set nums = numbers if numbers else [] %}
+
+  <g id="kpi_grid" transform="translate({{ gridX }}, {{ gridY }})">
+    {% if nums|length == 0 %}
+      <rect class="card" x="0" y="0" width="{{ gridW }}" height="{{ cardH }}" />
+      <text class="kpiLabel" x="28" y="56">수치 데이터가 충분하지 않습니다</text>
+      <text class="kpiNote" x="28" y="92">본문에서 숫자/비율/금액/인원 등을 찾지 못했어요.</text>
+    {% else %}
+      {% for n in nums[:4] %}
+        {% set col = (loop.index0 % 2) %}
+        {% set row = (loop.index0 // 2) %}
+        {% set x = col * (cardW + gap) %}
+        {% set y = row * (cardH + gap) %}
+        <g class="kpi_card">
+          <rect class="card" x="{{ x }}" y="{{ y }}" width="{{ cardW }}" height="{{ cardH }}" />
+          <text class="kpiLabel" x="{{ x + 28 }}" y="{{ y + 52 }}">{{ n.label }}</text>
+          <text class="kpiVal" x="{{ x + 28 }}" y="{{ y + 108 }}">{{ n.value }}{{ n.unit }}</text>
+          {% if n.note %}
+            <text class="kpiNote" x="{{ x + 28 }}" y="{{ y + 144 }}">{{ n.note }}</text>
+          {% endif %}
+        </g>
+      {% endfor %}
+    {% endif %}
+  </g>
+
+  {# --- Key Points (2개만 노출) --- #}
+  {% set kpY = gridY + (cardH*2) + gap + 26 %}
+  {% set kpX = M %}
+  {% set kpW = W - (M*2) %}
+
+  <g id="key_points" transform="translate({{ kpX }}, {{ kpY }})">
+    <text class="kpiLabel" x="0" y="0">핵심 포인트</text>
+
+    {% set kp = text.key_points if text.key_points else [] %}
+    {% set kp2 = (kp + ["",""])[:2] %}
+
+    {% for t in kp2 %}
+      {% set yy = 42 + loop.index0 * 70 %}
+      <rect class="kpNumBg" x="0" y="{{ yy - 22 }}" width="34" height="34" rx="10" ry="10"/>
+      <text class="kpNum" x="12" y="{{ yy + 2 }}">{{ loop.index }}</text>
+      <text class="kpText" x="52" y="{{ yy + 6 }}">{{ t }}</text>
+    {% endfor %}
+  </g>
+
+  {# --- Footer / Sources --- #}
+  <g id="footer" transform="translate({{ M }}, {{ H - M - 24 }})">
+    <text class="src" x="0" y="18">{{ text.sources_line }}</text>
+  </g>
 </svg>

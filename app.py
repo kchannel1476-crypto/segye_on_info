@@ -144,16 +144,19 @@ st.set_page_config(page_title="SEGYE.ON Infographic", layout="wide")
 # Jinja2 환경
 # -----------------------------
 env = Environment(loader=FileSystemLoader("templates"), autoescape=False)
-TPL_MAP = {
-    "story_lite": env.get_template("story_lite.svg.j2"),
-    "data_focus": env.get_template("data_focus.svg.j2"),
-    "timeline": env.get_template("timeline.svg.j2"),
-    "compare": env.get_template("compare.svg.j2"),
-}
+tpl_story = env.get_template("story_lite.svg.j2")
+tpl_data = env.get_template("data_focus.svg.j2")
+tpl_timeline = env.get_template("timeline.svg.j2")
+tpl_compare = env.get_template("compare.svg.j2")
 
 def render_svg(template_key: str, render_model: dict) -> str:
-    tpl = TPL_MAP.get(template_key, TPL_MAP["story_lite"])
-    return tpl.render(**render_model)
+    if template_key == "data_focus":
+        return tpl_data.render(**render_model)
+    if template_key == "timeline":
+        return tpl_timeline.render(**render_model)
+    if template_key == "compare":
+        return tpl_compare.render(**render_model)
+    return tpl_story.render(**render_model)
 
 def default_spec():
     return {
@@ -213,7 +216,7 @@ def build_render_model(spec: dict) -> dict:
     charts = c.get("charts", [])
     chart_title = charts[0].get("title", "").strip() if charts else ""
     chart_note = charts[0].get("note", "").strip() if charts else ""
-    nums = c.get("numbers", [])[:3]
+    nums = c.get("numbers", [])[:4]
     numbers = nums[:2]
     big1 = str(numbers[0].get("value", "")) if numbers else ""
     big1_label = (numbers[0].get("label", "") or numbers[0].get("context", "") or "").strip() if numbers else ""
