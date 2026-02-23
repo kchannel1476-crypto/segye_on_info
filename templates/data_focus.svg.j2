@@ -89,19 +89,19 @@
     <text class="kpiLabel" x="0" y="0">구성 비율</text>
 
     {% set total = chart["items"][0]["value"] + chart["items"][1]["value"] %}
-    {% set ratio = chart["items"][0]["value"] / total %}
+    {% set ratio = (chart["items"][0]["value"] / total) if total > 0 else 0 %}
 
     <circle cx="240" cy="100" r="70" stroke="#EEE" stroke-width="20" fill="none"/>
     <circle cx="240" cy="100" r="70"
-            stroke="#111" stroke-width="20"
-            stroke-dasharray="{{ (440 * ratio)|int }} 440"
-            transform="rotate(-90 240 100)"
-            fill="none"/>
+          stroke="#111" stroke-width="20"
+          stroke-dasharray="{{ 440 * ratio }} 440"
+          transform="rotate(-90 240 100)"
+          fill="none"/>
 
-    <text class="kpiLabel" x="330" y="90">{{ chart.items[0].label }}</text>
-    <text class="kpiLabel" x="330" y="120">{{ chart.items[1].label }}</text>
+  <text class="kpiLabel" x="330" y="90">{{ chart["items"][0]["label"] }}</text>
+  <text class="kpiLabel" x="330" y="120">{{ chart["items"][1]["label"] }}</text>
   </g>
-  {% elif chart and chart["items"] and (chart["items"]|length) >= 2 %}
+  {% elif chart and chart["items"] and (chart["items"]|length) >= 2 and chart["type"] == "bar" %}
   {% set chartY = gridY + (cardH*2) + gap + 10 %}
   {% set chartX = M %}
   {% set chartW = W - (M*2) %}
@@ -113,16 +113,16 @@
 
     {% for item in chart["items"][:4] %}
       {% set yy = 28 + loop.index0 * (barH + barGap) %}
-      <text class="kpiLabel" x="0" y="{{ yy + 18 }}">{{ item.label }}</text>
+      <text class="kpiLabel" x="0" y="{{ yy + 18 }}">{{ item["label"] }}</text>
 
       <rect x="220" y="{{ yy }}" width="{{ chartW - 240 }}" height="{{ barH }}"
             fill="#EFEFEF" rx="12" ry="12"/>
 
-      <rect x="220" y="{{ yy }}" width="{{ (chartW - 240) * item.norm }}"
+      <rect x="220" y="{{ yy }}" width="{{ (chartW - 240) * item["norm"] }}"
             height="{{ barH }}" fill="#111111" rx="12" ry="12"/>
 
       <text class="kpiNote" x="{{ chartW - 100 }}" y="{{ yy + 18 }}">
-        {{ item.value }}
+        {{ item["value"] }}
       </text>
     {% endfor %}
   </g>

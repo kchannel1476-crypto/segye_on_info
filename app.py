@@ -340,17 +340,19 @@ def build_render_model(spec: dict) -> dict:
     # --- Chart data preparation ---
     chart_items = []
     values = []
+    pairs = []
     for n in nums:
         raw = (n.get("value") or "").replace(",", "")
         try:
             val = float(raw)
             values.append(val)
-            chart_items.append({"label": n.get("label", ""), "value": val})
+            pairs.append((n.get("label", ""), val))
         except Exception:
             continue
     chart_max = max(values) if values else 0
-    for item in chart_items:
-        item["norm"] = item["value"] / chart_max if chart_max > 0 else 0
+    for label, val in pairs:
+        norm = val / chart_max if chart_max > 0 else 0
+        chart_items.append({"label": label, "value": val, "norm": norm})
 
     chart_type = "donut" if len(chart_items) == 2 else "bar"
     chart_obj = {"items": chart_items, "max": chart_max, "type": chart_type}
