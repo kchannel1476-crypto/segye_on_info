@@ -55,6 +55,26 @@ def _font_file_uri(path: str) -> str:
         return ""
 
 
+# PNG 한글 폰트 검색 경로 (프로젝트 fonts/ → SEGYE_FONTS_DIR → 아래 경로 순)
+_FONTS_FALLBACK_DIRS = [
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts"),
+    os.environ.get("SEGYE_FONTS_DIR", "").strip() or None,
+    os.path.expanduser(r"~\Desktop\static"),
+    r"c:\Users\segye\Desktop\static",
+]
+
+
+def _find_font_path(filename: str) -> str:
+    """NotoSansKR-*.ttf 파일을 검색 경로에서 찾아 절대 경로 반환."""
+    for d in _FONTS_FALLBACK_DIRS:
+        if not d or not os.path.isdir(d):
+            continue
+        path = os.path.join(d, filename)
+        if os.path.isfile(path):
+            return path
+    return ""
+
+
 def svg_fonts_to_absolute_paths(svg: str) -> str:
     """PNG 변환 시 cairosvg가 한글 폰트를 쓰도록 url("fonts/...") 또는 data URI를 file:// 절대 경로로 치환."""
     if not svg:
@@ -64,8 +84,8 @@ def svg_fonts_to_absolute_paths(svg: str) -> str:
     uri_regular = ""
     uri_bold = ""
     for name in ("NotoSansKR-Regular.ttf", "NotoSansKR-Bold.ttf"):
-        path = os.path.join(base_dir, "fonts", name)
-        if os.path.isfile(path):
+        path = _find_font_path(name)
+        if path:
             u = _font_file_uri(path)
             if u:
                 if "Regular" in name:
