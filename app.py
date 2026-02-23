@@ -75,42 +75,50 @@ def _find_font_path(filename: str) -> str:
     return ""
 
 
+def _embed_font_base64_from_path(path: str) -> str:
+    """TTF 파일을 읽어 base64 데이터 URI 문자열 반환."""
+    if not path or not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+        return f"data:font/ttf;base64,{b64}"
+    except Exception:
+        return ""
+
+
 def svg_fonts_to_absolute_paths(svg: str) -> str:
-    """PNG 변환 시 cairosvg가 한글 폰트를 쓰도록 url("fonts/...") 또는 data URI를 file:// 절대 경로로 치환."""
+    """PNG 변환 시 한글 폰트가 적용되도록 TTF를 찾아 SVG에 base64로 임베드 (file:// 대신 임베드 사용)."""
     if not svg:
         return svg
-    base_dir = os.path.dirname(os.path.abspath(__file__))
     out = svg
-    uri_regular = ""
-    uri_bold = ""
+    data_regular = ""
+    data_bold = ""
     for name in ("NotoSansKR-Regular.ttf", "NotoSansKR-Bold.ttf"):
         path = _find_font_path(name)
         if path:
-            u = _font_file_uri(path)
-            if u:
+            data_uri = _embed_font_base64_from_path(path)
+            if data_uri:
                 if "Regular" in name:
-                    uri_regular = u
+                    data_regular = data_uri
                 else:
-                    uri_bold = u
-    # 상대 경로 치환
-    if uri_regular:
-        out = out.replace('url("fonts/NotoSansKR-Regular.ttf")', f'url("{uri_regular}")')
-        out = out.replace("url('fonts/NotoSansKR-Regular.ttf')", f"url('{uri_regular}')")
-    if uri_bold:
-        out = out.replace('url("fonts/NotoSansKR-Bold.ttf")', f'url("{uri_bold}")')
-        out = out.replace("url('fonts/NotoSansKR-Bold.ttf')", f"url('{uri_bold}')")
-    # data URI → file:// (cairosvg가 data URI 폰트를 지원하지 않을 수 있음)
-    if uri_regular:
+                    data_bold = data_uri
+    # url("fonts/...") 또는 기존 data URI → 새 base64 임베드 (한 번에 치환)
+    if data_regular:
+        out = out.replace('url("fonts/NotoSansKR-Regular.ttf")', f'url("{data_regular}")')
+        out = out.replace("url('fonts/NotoSansKR-Regular.ttf')", f'url("{data_regular}")')
         out = re.sub(
             r'url\("data:font/ttf;base64,[^"]+"\)(?=\s*format\(\'truetype\'\)\s*;\s*font-weight:\s*400)',
-            f'url("{uri_regular}")',
+            f'url("{data_regular}")',
             out,
             count=1,
         )
-    if uri_bold:
+    if data_bold:
+        out = out.replace('url("fonts/NotoSansKR-Bold.ttf")', f'url("{data_bold}")')
+        out = out.replace("url('fonts/NotoSansKR-Bold.ttf')", f'url("{data_bold}")')
         out = re.sub(
             r'url\("data:font/ttf;base64,[^"]+"\)(?=\s*format\(\'truetype\'\)\s*;\s*font-weight:\s*700)',
-            f'url("{uri_bold}")',
+            f'url("{data_bold}")',
             out,
             count=1,
         )
