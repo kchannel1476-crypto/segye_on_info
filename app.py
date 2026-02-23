@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 import time
 import re
+import textwrap
 import logging
 import streamlit as st
 import json
@@ -288,28 +289,45 @@ def infer_kpi_labels_with_ai(
         return None
 
 
-def enrich_labels(title: str, summary: str, text: str, numbers: list[dict]) -> dict:
+def enrich_labels(title: str, article_summary: str, article_text: str, nums_in: list[dict]) -> dict:
     """숫자 목록에 대해 label 생성 후 JSON 반환. 실패 시 빈 dict."""
     client = get_openai_client()
     if not client:
         return {}
 
-    prompt = f"""
-기사 제목:
-{title}
+    nums_json = json.dumps(nums_in, ensure_ascii=False)
+    prompt = textwrap.dedent(f"""
+    당신은 뉴스 인포그래픽 편집자입니다.
+    아래 기사 내용을 참고해서 숫자 목록의 라벨/단위/주석을 채우세요.
 
-기사 요약:
-{summary}
+    [기사 제목]
+    {title}
 
-본문 일부:
-{(text or "")[:2000]}
+    [요약]
+    {article_summary}
 
-숫자 목록:
-{json.dumps(numbers, ensure_ascii=False)}
+    [본문(발췌)]
+    {(article_text or "")[:1800]}
 
-각 숫자에 대해 label(6단어 이하 KPI 라벨), value(숫자만), unit(단위), note(맥락 한 줄), drop(불명확 시 true)를 채워 JSON 반환.
-형식: {"items": [{"label":"", "value":"", "unit":"", "note":"", "drop": false 또는 true}, ...]} 순서는 숫자 목록과 동일하게.
-"""
+    [숫자 목록 입력(JSON)]
+    {nums_json}
+
+    출력은 반드시 JSON만 반환하세요.
+
+    출력 형식(예시):
+    {{
+      "items": [
+        {{"label":"", "value":"", "unit":"", "note":"", "drop": false}}
+      ]
+    }}
+
+    규칙:
+    - items의 개수와 순서는 입력 숫자 목록과 동일해야 합니다.
+    - label은 2~10자 정도의 짧은 제목(예: "지지율", "감소폭", "예산")
+    - unit은 가능한 경우만(%, 명, 원, 건 등). 없으면 "".
+    - note는 0~20자 짧게. 없으면 "".
+    - 기사 맥락과 무관한 숫자는 drop=true로 표시.
+    """).strip()
 
     try:
         res = client.chat.completions.create(
