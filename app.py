@@ -7,6 +7,22 @@ import streamlit as st
 import json
 
 
+def xml_escape(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s)
+    # XML에서 깨지는 제어문자 제거 (탭/개행은 허용)
+    s = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", s)
+    s = (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+    return s
+
+
 def get_openai_client():
     key = None
     try:
@@ -381,49 +397,50 @@ def build_render_model(spec: dict) -> dict:
     meta = spec["meta"]
     c = spec["content"]
 
-    kp = [x.get("text","") for x in c.get("key_points", [])]
-    kp = (kp + ["","",""])[:3]
+    kp = [xml_escape(x.get("text", "")) for x in c.get("key_points", [])]
+    kp = (kp + ["", "", ""])[:3]
 
     quote = c.get("quote", {})
-    quote_line = quote.get("text","").strip()
+    quote_line = xml_escape(quote.get("text", "").strip())
 
     callout = (c.get("callouts", [{}]) + [{}])[0]
-    callout_title = callout.get("title","").strip()
-    callout_body = callout.get("body","").strip()
+    callout_title = xml_escape(callout.get("title", "").strip())
+    callout_body = xml_escape(callout.get("body", "").strip())
 
-    url = meta.get("source_url","").strip()
-    url_short = url.replace("https://","").replace("http://","")
+    url = meta.get("source_url", "").strip()
+    url_short = url.replace("https://", "").replace("http://", "")
     if len(url_short) > 42:
         url_short = url_short[:39] + "..."
-
-    sources_line = f"출처: {meta.get('publisher','')} · {meta.get('date','')} · {url_short}".strip()
+    sources_line = xml_escape(f"출처: {meta.get('publisher','')} · {meta.get('date','')} · {url_short}".strip())
 
     # data_focus
     charts = c.get("charts", [])
-    chart_title = charts[0].get("title", "").strip() if charts else ""
-    chart_note = charts[0].get("note", "").strip() if charts else ""
+    chart_title = xml_escape(charts[0].get("title", "").strip() if charts else "")
+    chart_note = xml_escape(charts[0].get("note", "").strip() if charts else "")
     nums = c.get("numbers", [])[:4]
     for n in nums:
         if not n.get("label"):
             n["label"] = "핵심 지표"
         n["trend"] = classify_trend(n.get("value", ""))
     numbers = nums[:2]
-    big1 = str(numbers[0].get("value", "")) if numbers else ""
-    big1_label = (numbers[0].get("label", "") or numbers[0].get("context", "") or "").strip() if numbers else ""
-    big2 = str(numbers[1].get("value", "")) if len(numbers) > 1 else ""
-    big2_label = (numbers[1].get("label", "") or numbers[1].get("context", "") or "").strip() if len(numbers) > 1 else ""
+    big1 = xml_escape(str(numbers[0].get("value", "")) if numbers else "")
+    big1_label = xml_escape((numbers[0].get("label", "") or numbers[0].get("context", "") or "").strip() if numbers else "")
+    big2 = xml_escape(str(numbers[1].get("value", "")) if len(numbers) > 1 else "")
+    big2_label = xml_escape((numbers[1].get("label", "") or numbers[1].get("context", "") or "").strip() if len(numbers) > 1 else "")
     if c.get("chart"):
-        chart_title = c["chart"].get("title", chart_title)
-        chart_note = c["chart"].get("note", chart_note)
+        if c["chart"].get("title"):
+            chart_title = xml_escape(c["chart"].get("title", ""))
+        if c["chart"].get("note"):
+            chart_note = xml_escape(c["chart"].get("note", ""))
 
     # timeline
     tl = c.get("timeline", [])[:8]
-    text_timeline = [{"date": t.get("date", ""), "event": t.get("event", "")} for t in tl]
+    text_timeline = [{"date": xml_escape(t.get("date", "")), "event": xml_escape(t.get("event", ""))} for t in tl]
 
     # compare
     comp = c.get("comparison", {}) or {}
     comp_items = (comp.get("items") or [])[:6]
-    compare_rows = [{"left": i.get("left", ""), "right": i.get("right", "")} for i in comp_items]
+    compare_rows = [{"left": xml_escape(i.get("left", "")), "right": xml_escape(i.get("right", ""))} for i in comp_items]
 
     # --- Chart data preparation ---
     chart_items = []
@@ -435,8 +452,7 @@ def build_render_model(spec: dict) -> dict:
             val = float(raw)
         except Exception:
             continue
-
-        label = (n.get("label") or "").strip()
+        label = xml_escape((n.get("label") or "").strip())
         values.append(val)
         chart_items.append({"label": label, "value": val})
 
@@ -448,15 +464,27 @@ def build_render_model(spec: dict) -> dict:
     chart_obj = {"items": chart_items, "max": chart_max, "type": chart_type}
 
     headline = c.get("headline", "").strip()
-    headline_lines = wrap_headline(headline)
+    headline_lines = [xml_escape(line) for line in wrap_headline(headline)]
+
+    # numbers: SVG에 넣을 복사본에 escape 적용 (원본 spec은 변경하지 않음)
+    numbers_escaped = [
+        {
+            "label": xml_escape(n.get("label", "")),
+            "value": xml_escape(str(n.get("value", ""))),
+            "unit": xml_escape(n.get("unit", "")),
+            "note": xml_escape(n.get("note", "")),
+            "trend": n.get("trend", "neutral"),
+        }
+        for n in nums
+    ]
 
     return {
         "canvas": {"w": 1080, "h": 1080, "margin": 72},
         "text": {
-            "headline": headline,
+            "headline": xml_escape(headline),
             "headline_lines": headline_lines,
-            "dek": c.get("dek","").strip(),
-            "keywords": c.get("keywords", [])[:6],
+            "dek": xml_escape(c.get("dek", "").strip()),
+            "keywords": [xml_escape(k) for k in c.get("keywords", [])[:6]],
             "key_points": kp,
             "quote_line": quote_line,
             "callout_title": callout_title,
@@ -469,15 +497,15 @@ def build_render_model(spec: dict) -> dict:
             "big2": big2,
             "big2_label": big2_label,
             "timeline": text_timeline,
-            "left_title": comp.get("left_title", ""),
-            "right_title": comp.get("right_title", ""),
+            "left_title": xml_escape(comp.get("left_title", "")),
+            "right_title": xml_escape(comp.get("right_title", "")),
             "compare_rows": compare_rows,
         },
         "flags": {
             "has_quote": bool(quote_line),
             "has_callout": bool(callout_title or callout_body)
         },
-        "numbers": nums,
+        "numbers": numbers_escaped,
         "chart": chart_obj,
     }
 
